@@ -4,7 +4,7 @@ import Link from 'next/link';
 export const metadata = {
   title: 'Switchboard — truthful resume tailoring',
   description: 'A calm, review-first resume tailoring workspace.',
-  icons: { icon: '/icon.svg' },
+  icons: { icon: '/favicon.svg' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
