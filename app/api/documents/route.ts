@@ -4,10 +4,11 @@ import { authConfig, isDemoMode } from '../../../lib/auth/config';
 import { extractDocumentText, validateDocument } from '../../../lib/documents/validation';
 import { saveDocument } from '../../../lib/server/mock-store';
 
+export const runtime = 'nodejs';
+
 export async function POST(request: Request) {
   const { session, response } = await requireSession(request);
   if (response) return response;
-  if (!isDemoMode) return NextResponse.json({ error: 'Document storage is not configured.' }, { status: 503 });
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');
   if (!(file instanceof File)) return NextResponse.json({ error: 'A document file is required.' }, { status: 400 });

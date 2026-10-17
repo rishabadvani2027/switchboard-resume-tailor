@@ -22,10 +22,21 @@ function inferType(name: string) {
 
 export async function extractDocumentText(file: File) {
   const metadata = validateDocument(file);
-  if (metadata.type !== 'text/plain') {
-    throw new Error('PDF and DOCX extraction requires the configured server parser.');
+  let text: string;
+  if (metadata.type === 'text/plain') {
+    text = await file.text();
+  } else if (metadata.type === 'application/pdf') {
+    const { PDFParse } = await import('pdf-parse');
+    const parser = new PDFParse({ data: new Uint8Array(await file.arrayBuffer()) });
+    try {
+      text = (await parser.getText()).text;
+    } finally {
+      await parser.destroy();
+    }
+  } else {
+    const mammoth = await import('mammoth');
+    text = (await mammoth.extractRawText({ buffer: Buffer.from(await file.arrayBuffer()) })).value;
   }
-  const text = await file.text();
   if (!text.trim()) throw new Error('The uploaded document is empty.');
   return text;
 }
