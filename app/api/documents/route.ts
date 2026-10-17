@@ -32,7 +32,7 @@ export async function POST(request: Request) {
         'content-type': metadata.type,
         'x-upsert': 'false',
       },
-      body: file.stream(),
+      body: await file.arrayBuffer(),
       cache: 'no-store',
     });
     if (!upload.ok) return NextResponse.json({ error: 'The document could not be stored.' }, { status: 502 });
