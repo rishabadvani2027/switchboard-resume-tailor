@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
 export const supportedDocumentTypes = ['text/plain', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'] as const;
 export const documentMetadataSchema = z.object({
   name: z.string().min(1).max(255),

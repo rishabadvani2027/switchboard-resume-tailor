@@ -29,6 +29,10 @@ stored analysis and decisions; client-supplied source or changes are ignored.
 Production must replace these records with the Supabase tables and private
 storage described in the migration before handling real documents.
 
+Documents are stored in the private `private-documents` Supabase Storage bucket
+under the authenticated user's folder. The bucket and server-side validation
+reject files larger than 5 MB and allow only TXT, PDF, and DOCX MIME types.
+
 Checks:
 
 ```bash

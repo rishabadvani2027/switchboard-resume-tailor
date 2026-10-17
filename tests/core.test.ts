@@ -63,6 +63,8 @@ test('OAuth callbacks require matching state and a PKCE verifier', () => {
 test('provider output and uploads are validated at the boundary', () => {
   assert.throws(() => tailoringResultSchema.parse({ status: 'ready', changes: [], provider: 'x' }));
   assert.equal(validateDocument({ name: 'resume.txt', type: '', size: 10 }).type, 'text/plain');
+  assert.equal(validateDocument({ name: 'resume.txt', type: '', size: 5 * 1024 * 1024 }).size, 5 * 1024 * 1024);
+  assert.throws(() => validateDocument({ name: 'resume.txt', type: '', size: 5 * 1024 * 1024 + 1 }));
   assert.throws(() => validateDocument({ name: 'resume.exe', type: '', size: 10 }));
 });
 

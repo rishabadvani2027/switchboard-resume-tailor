@@ -78,5 +78,10 @@ create policy "owner subscriptions" on public.subscriptions for select using (us
 create policy "owner usage" on public.usage_ledger for select using (user_id = auth.uid());
 
 insert into storage.buckets (id, name, public) values ('private-documents', 'private-documents', false) on conflict (id) do nothing;
+update storage.buckets
+set public = false,
+    file_size_limit = 5242880,
+    allowed_mime_types = array['text/plain', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']::text[]
+where id = 'private-documents';
 create policy "private document owner read" on storage.objects for select using (bucket_id = 'private-documents' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "private document owner write" on storage.objects for insert with check (bucket_id = 'private-documents' and (storage.foldername(name))[1] = auth.uid()::text);
