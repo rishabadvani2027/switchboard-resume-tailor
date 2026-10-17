@@ -53,6 +53,8 @@ p { color:var(--muted); }
 .input:focus,.textarea:focus { border-color:var(--blue); box-shadow:0 0 0 3px #e9edff; }
 .textarea { min-height:180px; resize:vertical; }
 .field-note { color:var(--muted); font-size:12px; margin-top:6px; }
+.auth-switch { color:var(--muted); text-align:center; }
+.auth-switch a { color:var(--ink); font-weight:700; }
 .upload { border:1px dashed #b7c0d6; border-radius:12px; padding:22px; background:#fbfcff; text-align:center; }
 .upload input { width:100%; margin-top:10px; }
 .notice { border-radius:10px; padding:13px 15px; font-size:14px; }

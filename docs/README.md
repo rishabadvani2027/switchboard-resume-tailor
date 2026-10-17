@@ -8,14 +8,15 @@ npm install
 npm run dev
 ```
 
-The flow is `/` → `/signin` → `/intake` → `/review` → `/export`. Demo mode uses
+The flow is `/` → `/signin` → `/signup` → email verification → `/intake` → `/review` → `/export`. Demo mode uses
 server-side in-memory analysis/change records and a deterministic mock provider.
 Set `NEXT_PUBLIC_APP_MODE=production` only after the Supabase persistence,
 billing, document parsers, and tailoring provider integrations are deployed;
 protected routes and APIs fail closed rather than silently falling back to the
 demo store.
 
-Production sign-in controls post to Supabase Auth action boundaries, and Google
+Production sign-in and sign-up post to Supabase Auth action boundaries. Sign-up
+requires email verification before protected routes can be accessed. Google
 OAuth uses a state cookie plus a required S256 PKCE verifier. Missing or
 mismatched callback state/verifiers are rejected. Analysis requests require a
 caller-supplied idempotency key; request content is never used as an implicit
