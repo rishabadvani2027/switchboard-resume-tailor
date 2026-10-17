@@ -9,7 +9,11 @@ export const documentMetadataSchema = z.object({
 }).strict();
 
 export function validateDocument(file: { name: string; type: string; size: number }) {
-  return documentMetadataSchema.parse({ ...file, type: file.type || inferType(file.name) });
+  return documentMetadataSchema.parse({
+    name: file.name,
+    type: file.type || inferType(file.name),
+    size: file.size,
+  });
 }
 
 function inferType(name: string) {

@@ -68,6 +68,15 @@ test('provider output and uploads are validated at the boundary', () => {
   assert.throws(() => validateDocument({ name: 'resume.exe', type: '', size: 10 }));
 });
 
+test('document validation reads metadata from browser File objects', () => {
+  const file = new File(['resume text'], 'resume.txt', { type: 'text/plain' });
+  assert.deepEqual(validateDocument(file), {
+    name: 'resume.txt',
+    type: 'text/plain',
+    size: 11,
+  });
+});
+
 test('provider changes require unique, exact source occurrences and kind semantics', () => {
   const valid = {
     analysisId: 'a',
