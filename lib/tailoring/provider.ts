@@ -108,9 +108,14 @@ function friendlyHttpError(provider: string, status: number, keySource: KeySourc
       : 'The AI provider rejected the server API key. Ask the site owner to check it.';
   }
   if (status === 404) return `${provider} does not recognise that model name. Check the model in AI settings.`;
-  if (status === 402 || status === 429) {
+  if (status === 402) {
     return keySource === 'user'
-      ? `${provider} refused the request (rate limit or no credit left on your account).`
+      ? `${provider} says your account is out of credit. Add credit with ${provider} or use another key.`
+      : 'The built-in AI has run out of credit. Add your own AI key in AI settings, or try again later.';
+  }
+  if (status === 429) {
+    return keySource === 'user'
+      ? `${provider} is rate-limiting your key. Wait a minute and try again.`
       : 'The AI service is busy right now. Please try again in a minute.';
   }
   if (status >= 500) return `${provider} is having problems right now. Please try again shortly.`;
@@ -172,14 +177,23 @@ export class OpenAICompatibleProvider implements TailoringProvider {
   }
 
   private async request(input: TailoringInput, mode: 'schema' | 'object' | 'plain') {
+    const isOpenRouter = this.options.baseUrl.includes('openrouter.ai');
     const responseFormat = mode === 'schema'
       ? { response_format: { type: 'json_schema', json_schema: { name: 'tailoring', strict: true, schema: OUTPUT_SCHEMA } } }
       : mode === 'object' ? { response_format: { type: 'json_object' } } : {};
     return callWithTimeout(`${this.options.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${this.options.apiKey}`, 'content-type': 'application/json', ...this.options.extraHeaders },
+      headers: {
+        authorization: `Bearer ${this.options.apiKey}`,
+        'content-type': 'application/json',
+        ...(isOpenRouter ? { 'HTTP-Referer': 'https://switchboardapp.studio', 'X-Title': 'Switchboard' } : {}),
+        ...this.options.extraHeaders,
+      },
       body: JSON.stringify({
         model: this.options.model,
+        // Without a cap, some gateways (e.g. OpenRouter) reserve the model's full output budget
+        // and reject the request when the account balance is low.
+        max_tokens: 8000,
         ...responseFormat,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -293,8 +307,8 @@ export function getTailoringProvider(): TailoringProvider {
 
 function serverOpenAI(apiKey: string) {
   return new OpenAICompatibleProvider({
-    label: 'OpenAI',
-    slug: 'openai',
+    label: (process.env.OPENAI_BASE_URL || '').includes('openrouter') ? 'OpenRouter' : 'OpenAI',
+    slug: (process.env.OPENAI_BASE_URL || '').includes('openrouter') ? 'openrouter' : 'openai',
     baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
     apiKey,
     model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
