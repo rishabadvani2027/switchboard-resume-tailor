@@ -1,34 +1,232 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Steps } from '../../components/Steps';
-import type { ResumeChange } from '../../lib/tailoring/types';
-import { canExport } from '../../lib/export/assemble';
+import { buildDocumentBlocks, type DiffLine } from '../../lib/diff';
+import { assembleResume, canExport } from '../../lib/export/assemble';
+import type { ChangeStatus, Insights, ResumeChange } from '../../lib/tailoring/types';
+
+type Analysis = {
+  analysisId: string;
+  title: string;
+  source: string;
+  jobDescription: string;
+  changes: ResumeChange[];
+  insights?: Insights;
+  provider: string;
+};
+
+const CONTEXT_LINES = 2;
+
+function Line({ line }: { line: DiffLine }) {
+  const sign = line.type === 'add' ? '+' : line.type === 'remove' ? '−' : ' ';
+  return (
+    <div className={`dl dl-${line.type}`}>
+      <span className="dl-num">{line.type === 'add' ? '' : line.oldNumber}</span>
+      <span className="dl-sign">{sign}</span>
+      <span className="dl-text">
+        {line.fragments.map((fragment, index) => (
+          fragment.highlight ? <mark key={index}>{fragment.text}</mark> : <Fragment key={index}>{fragment.text}</Fragment>
+        ))}
+        {line.fragments.every((fragment) => !fragment.text) && ' '}
+      </span>
+    </div>
+  );
+}
+
+const kindLabel: Record<ResumeChange['kind'], string> = { edit: 'Rewrite', addition: 'Addition', removal: 'Removal' };
 
 export default function Review() {
-  const [changes, setChanges] = useState<ResumeChange[]>([]);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const analysisId = typeof window === 'undefined' ? '' : sessionStorage.getItem('analysisId') || '';
+  const [saving, setSaving] = useState<string | null>(null);
+  const [view, setView] = useState<'diff' | 'preview'>('diff');
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [showJd, setShowJd] = useState(false);
 
   useEffect(() => {
-    if (!analysisId) { setError('No analysis was found. Return to intake and try again.'); setLoading(false); return; }
-    fetch(`/api/analyze?analysisId=${encodeURIComponent(analysisId)}`).then(async (response) => {
-      if (!response.ok) throw new Error((await response.json()).error || 'Analysis could not be loaded.');
-      return response.json();
-    }).then((result) => setChanges(result.changes)).catch((reason: Error) => setError(reason.message)).finally(() => setLoading(false));
-  }, [analysisId]);
+    const params = new URLSearchParams(window.location.search);
+    let id = params.get('id') || '';
+    if (!id) { try { id = sessionStorage.getItem('analysisId') || ''; } catch { /* ignore */ } }
+    if (!id) { setError('No analysis was selected. Start from the workspace.'); setLoading(false); return; }
+    try { sessionStorage.setItem('analysisId', id); } catch { /* ignore */ }
+    if (!params.get('id')) window.history.replaceState(null, '', `/review?id=${encodeURIComponent(id)}`);
+    fetch(`/api/analyze?analysisId=${encodeURIComponent(id)}`)
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 401) { window.location.href = `/signin?error=session-expired&next=${encodeURIComponent(`/review?id=${id}`)}`; return null; }
+        if (!response.ok) throw new Error(result.error || 'The analysis could not be loaded.');
+        return result as Analysis;
+      })
+      .then((result) => { if (result) setAnalysis(result); })
+      .catch((reason: Error) => setError(reason.message))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const pending = useMemo(() => changes.filter((c) => c.status === 'pending').length, [changes]);
-  const approved = useMemo(() => changes.filter((c) => c.status === 'approved').length, [changes]);
-  const rejected = useMemo(() => changes.filter((c) => c.status === 'rejected').length, [changes]);
+  const changes = useMemo(() => analysis?.changes ?? [], [analysis]);
+  const counts = useMemo(() => ({
+    pending: changes.filter((c) => c.status === 'pending').length,
+    approved: changes.filter((c) => c.status === 'approved').length,
+    rejected: changes.filter((c) => c.status === 'rejected').length,
+  }), [changes]);
+  const blocks = useMemo(() => (analysis ? buildDocumentBlocks(analysis.source, changes) : []), [analysis, changes]);
+  const preview = useMemo(() => {
+    if (!analysis) return '';
+    try { return assembleResume(analysis.source, changes); } catch { return analysis.source; }
+  }, [analysis, changes]);
 
-  async function decide(id: string, status: 'approved' | 'rejected') {
-    const response = await fetch('/api/changes', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ analysisId, changeId: id, status }) });
-    if (!response.ok) { setError('That decision could not be saved.'); return; }
-    setChanges((current) => current.map((change) => change.id === id ? { ...change, status } : change));
+  async function decide(body: { changeId?: string; scope?: 'pending' | 'all'; status: ChangeStatus }, key: string) {
+    if (!analysis) return;
+    const previous = analysis.changes;
+    // Optimistic update so the review feels instant.
+    setAnalysis({
+      ...analysis,
+      changes: analysis.changes.map((change) => (
+        (body.changeId && change.id === body.changeId) || body.scope === 'all' || (body.scope === 'pending' && change.status === 'pending')
+          ? { ...change, status: body.status } : change
+      )),
+    });
+    setSaving(key);
+    setError('');
+    try {
+      const response = await fetch('/api/changes', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ analysisId: analysis.analysisId, ...body }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'That decision could not be saved.');
+      setAnalysis((current) => (current ? { ...current, changes: result.changes } : current));
+    } catch (reason) {
+      setAnalysis((current) => (current ? { ...current, changes: previous } : current));
+      setError(reason instanceof Error ? reason.message : 'That decision could not be saved.');
+    } finally {
+      setSaving(null);
+    }
   }
 
-  if (loading) return <main className="main"><div className="container"><Steps active={2}/><div className="card"><h2>Reading your documents…</h2><p>Our isolated tailoring adapter is preparing a small, reviewable set of suggestions.</p></div></div></main>;
-  if (error) return <main className="main"><div className="container"><Steps active={2}/><div className="notice error" role="alert">{error}</div></div></main>;
-  return <main className="main"><div className="container"><Steps active={2}/><div className="page-head"><div><div className="eyebrow">Review changes</div><h1>Keep what feels true.</h1><p>Approve or reject each suggestion. Nothing is exported automatically.</p></div><span className="status-pill pending">{pending} undecided</span></div><div className="review-layout"><div>{changes.map((change) => <article className="change" key={change.id}><div className="change-head"><div><strong>{change.section}</strong><div className="change-meta">{change.id} · {change.rationale}</div></div><span className={`status-pill ${change.status === 'pending' ? 'pending' : 'ready'}`}>{change.status}</span></div><div className="change-body"><div className="change-pane remove"><div className="pane-label">− Existing</div>{change.original}</div><div className="change-pane add"><div className="pane-label">+ Suggested</div>{change.proposed}</div></div><div className="decision-row"><button className={`decision reject ${change.status === 'rejected' ? 'selected' : ''}`} onClick={() => decide(change.id, 'rejected')}>Reject</button><button className={`decision approve ${change.status === 'approved' ? 'selected' : ''}`} onClick={() => decide(change.id, 'approved')}>Approve</button></div></article>)}</div><aside className="card summary"><h3>Review summary</h3><div className="summary-row"><span>Suggestions</span><strong>{changes.length}</strong></div><div className="summary-row"><span>Approved</span><strong>{approved}</strong></div><div className="summary-row"><span>Rejected</span><strong>{rejected}</strong></div><div className="summary-row"><span>Export</span><strong>{canExport(changes) ? 'Ready' : 'Locked'}</strong></div><button className="button primary" style={{ width: '100%', marginTop: 18 }} disabled={!canExport(changes)} onClick={() => { window.location.href = '/export'; }}>Continue to export <span>→</span></button><p className="field-note">Export unlocks after every change has a decision.</p></aside></div></div></main>;
+  const toggle = (change: ResumeChange, status: 'approved' | 'rejected') =>
+    decide({ changeId: change.id, status: change.status === status ? 'pending' : status }, change.id);
+
+  if (loading) {
+    return <main className="main"><div className="container"><Steps active={2} /><div className="card"><h2><span className="spinner dark" /> Loading your review…</h2></div></div></main>;
+  }
+  if (!analysis) {
+    return <main className="main"><div className="container"><Steps active={2} /><div className="notice error" role="alert">{error}</div><p><a className="button secondary" href="/intake">← Back to workspace</a></p></div></main>;
+  }
+
+  const ready = canExport(changes);
+  const progress = changes.length ? Math.round(((counts.approved + counts.rejected) / changes.length) * 100) : 0;
+
+  return (
+    <main className="main"><div className="container wide">
+      <Steps active={2} />
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Review changes · {analysis.title}</div>
+          <h1>Keep what feels true.</h1>
+          <p>Green lines are additions, red lines are removals. Approve or reject each change — only approved changes make it into your resume.</p>
+        </div>
+      </div>
+      {error && <div className="notice error" role="alert">{error}</div>}
+
+      <div className="review-layout">
+        <section>
+          <div className="diff-toolbar">
+            <div className="tabs" role="tablist">
+              <button role="tab" aria-selected={view === 'diff'} className={view === 'diff' ? 'active' : ''} onClick={() => setView('diff')}>Changes <span className="count">{changes.length}</span></button>
+              <button role="tab" aria-selected={view === 'preview'} className={view === 'preview' ? 'active' : ''} onClick={() => setView('preview')}>Preview result</button>
+            </div>
+            <div className="diff-stats">
+              <span className="stat-add">+{changes.filter((c) => c.kind !== 'removal').length}</span>
+              <span className="stat-del">−{changes.filter((c) => c.kind !== 'addition').length}</span>
+            </div>
+          </div>
+
+          {view === 'preview' ? (
+            <div className="file-box">
+              <div className="file-head"><span>resume.txt — with your approved changes</span></div>
+              <pre className="preview-text">{preview}</pre>
+            </div>
+          ) : (
+            <div className="file-box">
+              <div className="file-head">
+                <span>resume.txt</span>
+                <span className="field-note">{counts.pending} of {changes.length} undecided</span>
+              </div>
+              {blocks.map((block, index) => {
+                if (block.type === 'context') {
+                  const lines = block.lines;
+                  const isFirst = index === 0;
+                  const isLast = index === blocks.length - 1;
+                  const head = isFirst ? 0 : CONTEXT_LINES;
+                  const tail = isLast ? 0 : CONTEXT_LINES;
+                  const collapsible = !expanded.has(index) && lines.length > head + tail + 2;
+                  if (!collapsible) {
+                    return <div key={index}>{lines.map((line) => <Line key={line.number} line={{ type: 'context', oldNumber: line.number, fragments: [{ text: line.text, highlight: false }] }} />)}</div>;
+                  }
+                  const hidden = lines.length - head - tail;
+                  return (
+                    <div key={index}>
+                      {lines.slice(0, head).map((line) => <Line key={line.number} line={{ type: 'context', oldNumber: line.number, fragments: [{ text: line.text, highlight: false }] }} />)}
+                      <button className="expand-row" onClick={() => setExpanded(new Set([...expanded, index]))}>↕ Show {hidden} unchanged {hidden === 1 ? 'line' : 'lines'}</button>
+                      {lines.slice(lines.length - tail).map((line) => <Line key={line.number} line={{ type: 'context', oldNumber: line.number, fragments: [{ text: line.text, highlight: false }] }} />)}
+                    </div>
+                  );
+                }
+                const { change } = block;
+                return (
+                  <div key={change.id} className={`hunk hunk-${change.status}`} id={change.id}>
+                    <div className="hunk-head">
+                      <div className="hunk-meta">
+                        <span className={`kind kind-${change.kind}`}>{kindLabel[change.kind]}</span>
+                        <strong>{change.section}</strong>
+                        {change.rationale && <span className="hunk-why">— {change.rationale}</span>}
+                      </div>
+                      <div className="hunk-actions">
+                        <button className={`decision reject ${change.status === 'rejected' ? 'selected' : ''}`} disabled={saving !== null} onClick={() => toggle(change, 'rejected')} aria-pressed={change.status === 'rejected'}>✕ Reject</button>
+                        <button className={`decision approve ${change.status === 'approved' ? 'selected' : ''}`} disabled={saving !== null} onClick={() => toggle(change, 'approved')} aria-pressed={change.status === 'approved'}>✓ Approve</button>
+                      </div>
+                    </div>
+                    <div className="hunk-body">{block.lines.map((line, lineIndex) => <Line key={lineIndex} line={line} />)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <aside className="summary-col">
+          <div className="card summary">
+            <h3>Review summary</h3>
+            <div className="progress" aria-label={`${progress}% reviewed`}><span style={{ width: `${progress}%` }} /></div>
+            <div className="summary-row"><span>Suggestions</span><strong>{changes.length}</strong></div>
+            <div className="summary-row"><span>Approved</span><strong className="green">{counts.approved}</strong></div>
+            <div className="summary-row"><span>Rejected</span><strong className="red">{counts.rejected}</strong></div>
+            <div className="summary-row"><span>Undecided</span><strong>{counts.pending}</strong></div>
+            <div className="bulk-row">
+              <button className="button secondary small" disabled={counts.pending === 0 || saving !== null} onClick={() => decide({ scope: 'pending', status: 'approved' }, 'bulk')}>Approve rest</button>
+              <button className="button secondary small" disabled={counts.pending === 0 || saving !== null} onClick={() => decide({ scope: 'pending', status: 'rejected' }, 'bulk')}>Reject rest</button>
+            </div>
+            <button className="button primary" style={{ width: '100%', marginTop: 14 }} disabled={!ready || saving !== null} onClick={() => { window.location.href = `/export?id=${encodeURIComponent(analysis.analysisId)}`; }}>Continue to export <span>→</span></button>
+            <p className="field-note">{ready ? 'All changes decided.' : 'Export unlocks once every change is approved or rejected.'}</p>
+          </div>
+
+          {analysis.insights && (analysis.insights.summary || analysis.insights.matchedKeywords.length > 0 || analysis.insights.missingKeywords.length > 0) && (
+            <div className="card summary insights">
+              <h3>Fit for this role</h3>
+              {analysis.insights.summary && <p>{analysis.insights.summary}</p>}
+              {analysis.insights.matchedKeywords.length > 0 && <><div className="label">Already on your resume</div><div className="chips">{analysis.insights.matchedKeywords.map((k) => <span key={k} className="chip chip-ok">{k}</span>)}</div></>}
+              {analysis.insights.missingKeywords.length > 0 && <><div className="label" style={{ marginTop: 12 }}>Asked for, not shown</div><div className="chips">{analysis.insights.missingKeywords.map((k) => <span key={k} className="chip chip-gap">{k}</span>)}</div><p className="field-note">Only add these if you genuinely have the experience.</p></>}
+            </div>
+          )}
+
+          <div className="card summary">
+            <button className="link-button" onClick={() => setShowJd(!showJd)}>{showJd ? 'Hide' : 'Show'} job description</button>
+            {showJd && <pre className="jd-text">{analysis.jobDescription}</pre>}
+          </div>
+        </aside>
+      </div>
+    </div></main>
+  );
 }

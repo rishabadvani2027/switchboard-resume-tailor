@@ -1,56 +1,100 @@
 import { NextResponse } from 'next/server';
 import { requireSession } from '../../../lib/auth/require-session';
-import { isDemoMode } from '../../../lib/auth/config';
-import { getAnalysis, getOperationResult, releaseOperation, recordCompletedOperation, reserveOperation, saveAnalysis } from '../../../lib/server/mock-store';
-import { getTailoringProvider } from '../../../lib/tailoring/provider';
+import { canStartOperation } from '../../../lib/billing/entitlements';
+import { errorResponse } from '../../../lib/server/http';
+import { getStore, type AnalysisRecord } from '../../../lib/server/store';
+import { createByokProvider, getTailoringProvider, parseByok } from '../../../lib/tailoring/provider';
 import { validateTailoringResult } from '../../../lib/tailoring/types';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+// AI analysis can take a while for long resumes.
+export const maxDuration = 120;
+
+const MAX_TEXT = 60_000;
+
+const present = (analysis: AnalysisRecord) => ({
+  analysisId: analysis.id,
+  title: analysis.title,
+  status: analysis.status,
+  source: analysis.source,
+  jobDescription: analysis.jobDescription,
+  changes: analysis.changes,
+  insights: analysis.insights,
+  provider: analysis.provider,
+  createdAt: analysis.createdAt,
+});
+
+function deriveTitle(jobDescription: string) {
+  const firstLine = jobDescription.split('\n').map((line) => line.trim()).find((line) => line.length > 0) ?? 'Untitled role';
+  return firstLine.replace(/\s+/g, ' ').slice(0, 90);
+}
 
 export async function POST(request: Request) {
   const { session, response } = await requireSession(request);
   if (response) return response;
-  if (!isDemoMode) return NextResponse.json({ error: 'Analysis persistence is not configured.' }, { status: 503 });
-  const body = await request.json().catch(() => null) as { resume?: unknown; jobDescription?: unknown; idempotencyKey?: unknown } | null;
-  if (typeof body?.resume !== 'string' || typeof body.jobDescription !== 'string' || !body.resume.trim() || !body.jobDescription.trim() || typeof body.idempotencyKey !== 'string' || !body.idempotencyKey.trim() || body.idempotencyKey.length > 200) {
-    return NextResponse.json({ error: 'resume, jobDescription, and a caller-supplied idempotencyKey are required' }, { status: 400 });
+  const body = await request.json().catch(() => null) as { resume?: unknown; jobDescription?: unknown; idempotencyKey?: unknown; title?: unknown; byok?: unknown } | null;
+  const resume = typeof body?.resume === 'string' ? body.resume.replace(/\r\n/g, '\n') : '';
+  const jobDescription = typeof body?.jobDescription === 'string' ? body.jobDescription.replace(/\r\n/g, '\n') : '';
+  const idempotencyKey = typeof body?.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '';
+  if (!resume.trim() || !jobDescription.trim()) {
+    return NextResponse.json({ error: 'Add both your resume and the job description.' }, { status: 400 });
+  }
+  if (!idempotencyKey || idempotencyKey.length > 200) {
+    return NextResponse.json({ error: 'A request key is required. Refresh the page and try again.' }, { status: 400 });
+  }
+  if (resume.length > MAX_TEXT || jobDescription.length > MAX_TEXT) {
+    return NextResponse.json({ error: 'The resume or job description is too long (60,000 characters max).' }, { status: 413 });
   }
 
-  const operationKey = body.idempotencyKey;
-  const reservation = reserveOperation(session!.userId, operationKey);
-  if (!reservation.allowed) {
-    return NextResponse.json({ error: 'Subscription required to start another analysis.' }, { status: 402 });
-  }
-  if (reservation.alreadyReserved) {
-    const existing = getOperationResult(session!.userId, operationKey);
-    if (existing) return NextResponse.json({ analysisId: existing.id, status: existing.status, changes: existing.changes, provider: 'server-stored-analysis' });
-  }
   try {
-    const result = await getTailoringProvider().analyze({ resume: body.resume, jobDescription: body.jobDescription });
-    try {
-      validateTailoringResult(result, body.resume);
-    } catch {
-      releaseOperation(session!.userId, operationKey);
-      return NextResponse.json({ error: 'Analysis provider returned invalid changes.' }, { status: 502 });
+    const store = getStore(session!);
+    const existing = await store.findByIdempotencyKey(idempotencyKey);
+    if (existing) return NextResponse.json(present(existing));
+
+    // With their own key, users pay their AI provider directly, so the free allowance does not apply.
+    // The key is used for this request only and is never stored or logged.
+    const byok = parseByok(body?.byok);
+    if (!byok) {
+      const [completed, subscribed] = await Promise.all([store.countCompletedAnalyses(), store.hasActiveSubscription()]);
+      if (!canStartOperation(completed, subscribed)) {
+        return NextResponse.json({ error: 'You have used your 3 free analyses. Add your own AI key in AI settings (free, unlimited) or upgrade.', code: 'subscription-required' }, { status: 402 });
+      }
     }
-    if (result.status !== 'ready') {
-      releaseOperation(session!.userId, operationKey);
-      return NextResponse.json({ error: 'Analysis provider failed closed.' }, { status: 502 });
-    }
-    saveAnalysis({ id: result.analysisId, userId: session!.userId, source: body.resume, jobDescription: body.jobDescription, changes: result.changes, status: 'ready' });
-    recordCompletedOperation(session!.userId, operationKey, result.analysisId);
-    return NextResponse.json(result);
-  } catch {
-    releaseOperation(session!.userId, operationKey);
-    return NextResponse.json({ error: 'Analysis provider failed closed.' }, { status: 502 });
+
+    const provider = byok ? createByokProvider(byok) : getTailoringProvider();
+    const result = validateTailoringResult(await provider.analyze({ resume, jobDescription }), resume);
+    const title = typeof body?.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 90) : deriveTitle(jobDescription);
+    const saved = await store.createAnalysis({
+      id: result.analysisId,
+      idempotencyKey,
+      title,
+      source: resume,
+      jobDescription,
+      changes: result.changes,
+      insights: result.insights ?? { summary: '', matchedKeywords: [], missingKeywords: [] },
+      provider: result.provider,
+    });
+    return NextResponse.json(present(saved));
+  } catch (error) {
+    return errorResponse(error, 'The analysis could not be completed. Please try again.');
   }
 }
 
 export async function GET(request: Request) {
   const { session, response } = await requireSession(request);
   if (response) return response;
-  if (!isDemoMode) return NextResponse.json({ error: 'Analysis persistence is not configured.' }, { status: 503 });
-  const id = new URL(request.url).searchParams.get('analysisId');
-  if (!id) return NextResponse.json({ error: 'analysisId is required' }, { status: 400 });
-  const analysis = getAnalysis(id, session!.userId);
-  if (!analysis) return NextResponse.json({ error: 'Analysis not found.' }, { status: 404 });
-  return NextResponse.json({ analysisId: analysis.id, status: analysis.status, changes: analysis.changes, provider: 'server-stored-analysis', error: analysis.error });
+  try {
+    const store = getStore(session!);
+    const id = new URL(request.url).searchParams.get('analysisId');
+    if (!id) {
+      const [analyses, completed, subscribed] = await Promise.all([store.listAnalyses(20), store.countCompletedAnalyses(), store.hasActiveSubscription()]);
+      return NextResponse.json({ analyses, completed, subscribed });
+    }
+    const analysis = await store.getAnalysis(id);
+    if (!analysis) return NextResponse.json({ error: 'That analysis was not found.' }, { status: 404 });
+    return NextResponse.json(present(analysis));
+  } catch (error) {
+    return errorResponse(error, 'The analysis could not be loaded.');
+  }
 }

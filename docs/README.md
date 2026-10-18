@@ -1,42 +1,73 @@
-# Switchboard MVP
+# Switchboard — resume tailoring with pull-request style review
 
-This is a local-first Next.js MVP for review-first resume tailoring. It runs in
-explicit, local-only `demo` mode with no Supabase, billing, or provider credentials:
+Upload a resume and a job description; an AI proposes targeted changes, shown like a GitHub
+diff (green = additions, red = removals, word-level highlights). Approve or reject each change;
+the export contains only what you approved.
+
+Flow: `/signup` → email verification → `/signin` → `/intake` → `/review?id=…` → `/export?id=…`
+
+## Architecture
+
+| Piece | Where |
+| --- | --- |
+| Auth (email/password, Google OAuth with PKCE, silent token refresh) | `app/api/auth/*`, `app/auth/callback`, `middleware.ts` |
+| AI tailoring (server key: OpenAI/Anthropic; bring-your-own-key: OpenAI, Anthropic, Gemini, OpenRouter, Groq, DeepSeek, Mistral) | `lib/tailoring/provider.ts`, `app/settings` |
+| Matching model output to exact resume spans | `lib/tailoring/spans.ts` |
+| Diff rendering (line + word level) | `lib/diff.ts`, `app/review/page.tsx` |
+| Export assembly (position-based, approved changes only) | `lib/export/assemble.ts` |
+| Persistence (Supabase REST + RLS in production, memory in demo) | `lib/server/store.ts` |
+| PDF / DOCX / TXT text extraction | `lib/documents/validation.ts` |
+
+## Run locally
 
 ```bash
 npm install
+cp .env.example .env.local   # fill in values
 npm run dev
 ```
 
-The flow is `/` → `/signin` → `/signup` → email verification → `/intake` → `/review` → `/export`. Demo mode uses
-server-side in-memory analysis/change records and a deterministic mock provider.
-Set `NEXT_PUBLIC_APP_MODE=production` only after the Supabase persistence,
-billing, document parsers, and tailoring provider integrations are deployed;
-protected routes and APIs fail closed rather than silently falling back to the
-demo store.
+For a zero-setup demo (no accounts, data in memory) set in `.env.local`:
 
-Production sign-in and sign-up post to Supabase Auth action boundaries. Sign-up
-requires email verification before protected routes can be accessed. Google
-OAuth uses a state cookie plus a required S256 PKCE verifier. Missing or
-mismatched callback state/verifiers are rejected. Analysis requests require a
-caller-supplied idempotency key; request content is never used as an implicit
-operation key. Provider results are validated for unique IDs, exact source
-occurrences, kind semantics, and non-empty ready output before persistence.
+```
+NEXT_PUBLIC_APP_MODE=demo
+NEXT_PUBLIC_DEMO_LOCAL_ONLY=true
+```
 
-Demo documents, analyses, and exports are server-side, in-memory records scoped
-by the demo user for the lifetime of the server process. Export always reads the
-stored analysis and decisions; client-supplied source or changes are ignored.
-Production must replace these records with the Supabase tables and private
-storage described in the migration before handling real documents.
+Demo mode only works with `npm run dev`; production builds always require Supabase.
 
-Documents are stored in the private `private-documents` Supabase Storage bucket
-under the authenticated user's folder. The bucket and server-side validation
-reject files larger than 5 MB and allow only TXT, PDF, and DOCX MIME types.
+## Deploy (Vercel)
 
-Checks:
+1. Apply the Supabase migrations in `supabase/migrations/` in order (`003_tailoring_persistence.sql`
+   is required by this version).
+2. In Vercel → Project → Settings → Environment Variables (Production), set:
+   - `NEXT_PUBLIC_APP_MODE=production`
+   - `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+   - `ANTHROPIC_API_KEY` **or** `OPENAI_API_KEY` (optional `ANTHROPIC_MODEL` / `OPENAI_MODEL`)
+   - `TAILORING_PROVIDER=auto` (or delete it)
+3. In Supabase → Authentication → URL Configuration, set **Site URL** to your Vercel domain and add
+   `https://<your-domain>/**` to **Redirect URLs** (needed for email verification and Google).
+4. For Google sign-in, enable the Google provider in Supabase → Authentication → Providers.
+5. Redeploy.
+
+## Checks
 
 ```bash
 npm run typecheck
 npm test
+npm run lint
 npm run build
 ```
+
+## Bring your own key
+
+Users can open **AI settings** (`/settings`) and paste their own API key for any supported provider.
+The key is kept in the browser's localStorage, sent with each analysis over HTTPS, used for that
+request only, and never stored or logged on the server (provider error text is redacted). Analyses
+made with a user's own key do not count towards the free allowance. Only the built-in provider
+endpoints are allowed, so the server can't be pointed at arbitrary URLs.
+
+## Not built yet
+
+- Card payments: the $9.99 plan shows "coming soon"; the free limit (3 analyses) is enforced
+  server-side. Add Stripe Checkout + a webhook that writes `public.subscriptions`.
+- Native .docx/.pdf generation: exports are Word-compatible `.doc`, print-to-PDF, and `.txt`.

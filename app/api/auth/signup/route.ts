@@ -27,8 +27,13 @@ export async function POST(request: Request) {
   }).catch(() => null);
 
   if (!response?.ok) {
-    const body = await response?.json().catch(() => null) as { error_code?: string } | null;
-    return redirect(body?.error_code === 'user_already_exists' ? '/signup?error=email-in-use' : '/signup?error=signup-failed');
+    const body = await response?.json().catch(() => null) as { error_code?: string; code?: string } | null;
+    const code = body?.error_code ?? body?.code;
+    if (code === 'user_already_exists' || code === 'email_exists') return redirect('/signup?error=email-in-use');
+    if (code === 'weak_password') return redirect('/signup?error=weak-password');
+    if (response?.status === 429 || code === 'over_email_send_rate_limit') return redirect('/signup?error=rate-limited');
+    console.error('[auth] sign-up failed', response?.status, body);
+    return redirect('/signup?error=signup-failed');
   }
   return redirect(`/signup?message=verification-sent&next=${encodeURIComponent(next)}`);
 }
