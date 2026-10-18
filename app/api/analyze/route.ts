@@ -74,6 +74,7 @@ export async function POST(request: Request) {
       changes: result.changes,
       insights: result.insights ?? { summary: '', matchedKeywords: [], missingKeywords: [] },
       provider: result.provider,
+      usesOwnKey: Boolean(byok),
     });
     return NextResponse.json(present(saved));
   } catch (error) {

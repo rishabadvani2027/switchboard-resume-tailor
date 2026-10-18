@@ -158,7 +158,9 @@ export function flagUnsupportedClaims(source: string, changes: ResumeChange[], m
     });
     if (introduced.length === 0) return change;
     const list = introduced.slice(0, 3).map((term) => `“${term}”`).join(', ');
-    const warning = `⚠ Adds ${list}, which isn't on your resume — only approve if it's true.`;
+    const warning = introduced.length === 1
+      ? `⚠ Adds ${list}, which isn't on your resume — only approve if it's true.`
+      : `⚠ Adds ${list}, which aren't on your resume — only approve if they're true.`;
     return { ...change, rationale: `${warning} ${change.rationale}`.slice(0, 2_000) };
   });
 }

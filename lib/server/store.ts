@@ -15,7 +15,7 @@ export type AnalysisRecord = {
 
 export type AnalysisSummary = { id: string; title: string; createdAt: string; total: number; pending: number };
 
-export type NewAnalysis = Omit<AnalysisRecord, 'createdAt' | 'status'> & { idempotencyKey: string };
+export type NewAnalysis = Omit<AnalysisRecord, 'createdAt' | 'status'> & { idempotencyKey: string; usesOwnKey?: boolean };
 
 export interface Store {
   readonly kind: 'memory' | 'supabase';
@@ -49,7 +49,7 @@ const summarize = (analysis: AnalysisRecord): AnalysisSummary => ({
 /* ---------------------------------------------------------------- memory (local demo) */
 
 type MemoryState = {
-  analyses: Map<string, AnalysisRecord & { userId: string; idempotencyKey: string }>;
+  analyses: Map<string, AnalysisRecord & { userId: string; idempotencyKey: string; usesOwnKey?: boolean }>;
   subscriptions: Set<string>;
   exports: Map<string, string>;
 };
@@ -66,7 +66,7 @@ export class MemoryStore implements Store {
   constructor(private userId: string) {}
 
   private own() { return [...memory.analyses.values()].filter((analysis) => analysis.userId === this.userId); }
-  async countCompletedAnalyses() { return this.own().filter((analysis) => analysis.status === 'ready').length; }
+  async countCompletedAnalyses() { return this.own().filter((analysis) => analysis.status === 'ready' && !analysis.usesOwnKey).length; }
   async hasActiveSubscription() { return memory.subscriptions.has(this.userId); }
   async activateDemoSubscription() { memory.subscriptions.add(this.userId); }
   async findByIdempotencyKey(key: string) { return this.own().find((analysis) => analysis.idempotencyKey === key) ?? null; }
@@ -143,7 +143,7 @@ export class SupabaseStore implements Store {
   }
 
   async countCompletedAnalyses() {
-    const rows = await this.request<Array<{ id: string }>>(`analyses?select=id&user_id=eq.${this.userId}&status=eq.ready&limit=1000`);
+    const rows = await this.request<Array<{ id: string }>>(`analyses?select=id&user_id=eq.${this.userId}&status=eq.ready&uses_own_key=eq.false&limit=1000`);
     return rows.length;
   }
 
@@ -192,6 +192,7 @@ export class SupabaseStore implements Store {
         provider: input.provider,
         status: 'ready',
         idempotency_key: input.idempotencyKey,
+        uses_own_key: Boolean(input.usesOwnKey),
       }),
     });
     await this.request('changes', {

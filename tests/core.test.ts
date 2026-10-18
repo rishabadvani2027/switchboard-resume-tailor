@@ -234,3 +234,11 @@ test('appending to a line becomes an edit, and unsupported keywords are flagged 
   const [plain] = flagUnsupportedClaims(RESUME, [{ ...skills, proposed: 'Python and Go' }], ['Kubernetes']);
   assert.equal(plain.rationale, 'JD asks for it');
 });
+
+test('analyses run with the user\'s own key do not use up the free allowance', async () => {
+  const store = new MemoryStore(`byok-${Date.now()}`);
+  const base = { title: 'Role', source: 'old', jobDescription: 'jd', provider: 'test', insights: { summary: '', matchedKeywords: [], missingKeywords: [] }, changes: [change('pending')] };
+  await store.createAnalysis({ ...base, id: `a-${Date.now()}`, idempotencyKey: 'k1' });
+  await store.createAnalysis({ ...base, id: `b-${Date.now()}`, idempotencyKey: 'k2', usesOwnKey: true });
+  assert.equal(await store.countCompletedAnalyses(), 1);
+});

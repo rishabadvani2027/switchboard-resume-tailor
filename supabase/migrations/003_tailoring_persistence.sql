@@ -7,7 +7,9 @@ alter table public.analyses
   add column if not exists job_description text not null default '',
   add column if not exists insights jsonb not null default '{}'::jsonb,
   add column if not exists idempotency_key text,
-  add column if not exists updated_at timestamptz not null default now();
+  add column if not exists updated_at timestamptz not null default now(),
+  -- Analyses run with the user's own AI key don't count towards the free allowance.
+  add column if not exists uses_own_key boolean not null default false;
 
 alter table public.analyses alter column provider set default 'unknown';
 
@@ -67,7 +69,8 @@ begin
     or new.job_description is distinct from old.job_description
     or new.user_id is distinct from old.user_id
     or new.status is distinct from old.status
-    or new.idempotency_key is distinct from old.idempotency_key then
+    or new.idempotency_key is distinct from old.idempotency_key
+    or new.uses_own_key is distinct from old.uses_own_key then
     raise exception 'Analysis content cannot be modified';
   end if;
   new.updated_at = now();
