@@ -37,9 +37,8 @@ export async function PATCH(request: Request) {
     const known = new Set(analysis.changes.map((change) => change.id));
     if (ids.some((id) => !known.has(id))) return NextResponse.json({ error: 'That change was not found.' }, { status: 404 });
 
-    const changes = await store.setChangeStatus(analysis.id, ids, status);
-    if (!changes) return NextResponse.json({ error: 'That analysis was not found.' }, { status: 404 });
-    return NextResponse.json({ changes, change: changes.find((change) => change.id === ids[0]) ?? null });
+    await store.setChangeStatus(analysis.id, ids, status);
+    return NextResponse.json({ updated: ids, status });
   } catch (error) {
     return errorResponse(error, 'That decision could not be saved.');
   }

@@ -25,7 +25,7 @@ export interface Store {
   createAnalysis(input: NewAnalysis): Promise<AnalysisRecord>;
   getAnalysis(id: string): Promise<AnalysisRecord | null>;
   listAnalyses(limit: number): Promise<AnalysisSummary[]>;
-  /** Sets the status of the given changes and returns the analysis' full, updated change list. */
+  /** Sets the status of the given changes. Returns null when the analysis does not exist (memory store only). */
   setChangeStatus(analysisId: string, changeIds: string[], status: ChangeStatus): Promise<ResumeChange[] | null>;
   saveExport(analysisId: string, content: string): Promise<void>;
   saveDocument(input: { name: string; type: string; bytes: ArrayBuffer; text: string; kind: 'resume' | 'job_description' }): Promise<{ id: string | null }>;
@@ -242,8 +242,7 @@ export class SupabaseStore implements Store {
         body: JSON.stringify({ status }),
       });
     }
-    const analysis = await this.getAnalysis(analysisId);
-    return analysis ? analysis.changes : null;
+    return [];
   }
 
   async saveExport(analysisId: string, content: string) {
