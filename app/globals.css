@@ -136,6 +136,7 @@ p { color:var(--muted); }
 .hunk-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:8px 12px; background:#f6f8fa; border-bottom:1px solid #eaeef2; flex-wrap:wrap; }
 .hunk-meta { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:13px; min-width:0; }
 .hunk-why { color:var(--muted); }
+.hunk-warn { color:var(--amber); background:var(--amber-bg); padding:2px 8px; border-radius:6px; font-weight:600; }
 .hunk-actions { display:flex; gap:6px; }
 .kind { font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:2px 7px; border-radius:999px; }
 .kind-edit { background:#ddf4ff; color:#0969da; } .kind-addition { background:var(--diff-add-gutter); color:#1a7f37; } .kind-removal { background:var(--diff-del-gutter); color:#cf222e; }

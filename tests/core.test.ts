@@ -223,3 +223,14 @@ test('OpenAI-compatible providers fall back when strict JSON schema is unsupport
     globalThis.fetch = originalFetch;
   }
 });
+
+test('appending to a line becomes an edit, and unsupported keywords are flagged for the reviewer', async () => {
+  const { flagUnsupportedClaims } = await import('../lib/tailoring/spans');
+  const [skills] = normalizeChanges(RESUME, [{ section: 'Skills', kind: 'addition', original: 'Python, Go', proposed: ', Kubernetes', rationale: 'JD asks for it' }]);
+  assert.equal(skills.kind, 'edit');
+  assert.equal(skills.proposed, 'Python, Go, Kubernetes');
+  const [flagged] = flagUnsupportedClaims(RESUME, [skills], ['Kubernetes', 'Python']);
+  assert.match(flagged.rationale, /^⚠ Adds “Kubernetes”/);
+  const [plain] = flagUnsupportedClaims(RESUME, [{ ...skills, proposed: 'Python and Go' }], ['Kubernetes']);
+  assert.equal(plain.rationale, 'JD asks for it');
+});

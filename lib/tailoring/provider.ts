@@ -1,5 +1,5 @@
 import { BYOK_PROVIDERS, type ByokProviderId } from './byok-providers';
-import { normalizeChanges, type RawChange } from './spans';
+import { flagUnsupportedClaims, normalizeChanges, type RawChange } from './spans';
 import { insightsSchema, tailoringResultSchema, type Insights, type TailoringResult } from './types';
 
 export type TailoringInput = { resume: string; jobDescription: string };
@@ -83,7 +83,8 @@ function toResult(provider: string, input: TailoringInput, output: ModelOutput):
     matchedKeywords: strings(output.matchedKeywords),
     missingKeywords: strings(output.missingKeywords),
   });
-  return tailoringResultSchema.parse({ analysisId: crypto.randomUUID(), status: 'ready', changes, provider, insights });
+  const flagged = flagUnsupportedClaims(input.resume, changes, insights.missingKeywords);
+  return tailoringResultSchema.parse({ analysisId: crypto.randomUUID(), status: 'ready', changes: flagged, provider, insights });
 }
 
 const SECRET_PATTERN = /(sk-[A-Za-z0-9_-]{6,}|AIza[0-9A-Za-z_-]{10,}|gsk_[A-Za-z0-9]{10,}|Bearer\s+\S+)/g;

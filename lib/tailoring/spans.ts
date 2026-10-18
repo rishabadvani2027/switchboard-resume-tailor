@@ -106,6 +106,13 @@ export function normalizeChanges(source: string, raw: RawChange[]): ResumeChange
     if (kind === 'addition') {
       // Models sometimes repeat the anchor in the proposed text; keep only the new part.
       if (proposed.startsWith(original)) proposed = proposed.slice(original.length);
+      // "Append ', Kubernetes' to this line" is really an edit of the line, not a new line.
+      if (/^[ \t]*[,;:&/|·–-]/.test(proposed) && !proposed.includes('\n')) {
+        kind = 'edit';
+        proposed = `${original}${proposed.replace(/^[ \t]+(?=[,;:])/, '')}`;
+      }
+    }
+    if (kind === 'addition') {
       proposed = proposed.replace(/^\n+/, '').replace(/\s+$/, '');
       if (!proposed.trim()) continue;
     }
@@ -129,4 +136,29 @@ export function normalizeChanges(source: string, raw: RawChange[]): ResumeChange
   return accepted
     .sort((a, b) => a.start - b.start)
     .map(({ start: _start, lines: _lines, ...change }, index) => ({ ...change, id: `chg-${String(index + 1).padStart(3, '0')}` }));
+}
+
+/**
+ * Flags suggestions that introduce a keyword the model itself listed as missing from the
+ * resume (e.g. adding "Kubernetes" to a skills line). These may be untrue, so the reviewer is
+ * warned explicitly rather than the suggestion being silently accepted.
+ */
+export function flagUnsupportedClaims(source: string, changes: ResumeChange[], missingKeywords: string[]): ResumeChange[] {
+  const resume = source.toLowerCase();
+  const terms = missingKeywords
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 2 && !resume.includes(term.toLowerCase()));
+  return changes.map((change) => {
+    if (change.kind === 'removal') return change;
+    const added = change.proposed.toLowerCase();
+    const before = change.original.toLowerCase();
+    const introduced = terms.filter((term) => {
+      const needle = term.toLowerCase();
+      return added.includes(needle) && !before.includes(needle);
+    });
+    if (introduced.length === 0) return change;
+    const list = introduced.slice(0, 3).map((term) => `“${term}”`).join(', ');
+    const warning = `⚠ Adds ${list}, which isn't on your resume — only approve if it's true.`;
+    return { ...change, rationale: `${warning} ${change.rationale}`.slice(0, 2_000) };
+  });
 }

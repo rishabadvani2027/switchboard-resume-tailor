@@ -184,7 +184,9 @@ export default function Review() {
                       <div className="hunk-meta">
                         <span className={`kind kind-${change.kind}`}>{kindLabel[change.kind]}</span>
                         <strong>{change.section}</strong>
-                        {change.rationale && <span className="hunk-why">— {change.rationale}</span>}
+                        {change.rationale && (change.rationale.startsWith('⚠')
+                          ? <span className="hunk-warn">{change.rationale}</span>
+                          : <span className="hunk-why">— {change.rationale}</span>)}
                       </div>
                       <div className="hunk-actions">
                         <button className={`decision reject ${change.status === 'rejected' ? 'selected' : ''}`} onClick={() => toggle(change, 'rejected')} aria-pressed={change.status === 'rejected'}>✕ Reject</button>
