@@ -30,12 +30,12 @@ export class DodoError extends Error {
   }
 }
 
-async function dodoRequest<T>(path: string, body: unknown): Promise<T> {
+async function dodoRequest<T>(path: string, body?: unknown): Promise<T> {
   if (!dodoConfig.apiKey) throw new DodoError('DODO_PAYMENTS_API_KEY is not set.', 'Payments are not set up yet.');
   const response = await fetch(`${baseUrl()}${path}`, {
-    method: 'POST',
+    method: body === undefined ? 'GET' : 'POST',
     headers: { authorization: `Bearer ${dodoConfig.apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     cache: 'no-store',
     signal: AbortSignal.timeout(20_000),
   }).catch((error: unknown) => { throw new DodoError(`Dodo unreachable: ${String(error)}`); });
@@ -149,3 +149,24 @@ export function subscriptionGrantsAccess(row: { status: string; current_period_e
   if (row.status === 'cancelled' && row.current_period_end) return new Date(row.current_period_end).getTime() > now;
   return false;
 }
+
+type DodoPayment = {
+  payment_id: string;
+  status?: string | null;
+  subscription_id?: string | null;
+  customer?: { customer_id?: string; email?: string };
+  metadata?: Record<string, unknown>;
+};
+
+type DodoSubscription = {
+  subscription_id: string;
+  status: string;
+  product_id?: string;
+  next_billing_date?: string | null;
+  cancel_at_next_billing_date?: boolean;
+  customer?: { customer_id?: string; email?: string };
+  metadata?: Record<string, string>;
+};
+
+export const getPayment = (paymentId: string) => dodoRequest<DodoPayment>(`/payments/${encodeURIComponent(paymentId)}`);
+export const getSubscription = (subscriptionId: string) => dodoRequest<DodoSubscription>(`/subscriptions/${encodeURIComponent(subscriptionId)}`);

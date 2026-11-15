@@ -48,8 +48,15 @@ export default function BillingPage() {
           if (returnedFromCheckout) setMessage({ kind: 'success', text: 'Payment received — Switchboard Pro is active. Thank you!' });
           return;
         }
-        // The payment webhook can arrive a few seconds after the redirect back here.
+        // The payment webhook can arrive a few seconds after the redirect back here; meanwhile ask
+        // the server to confirm the payment with Dodo directly.
         setMessage({ kind: 'info', text: 'Confirming your payment…' });
+        const paymentId = params.get('payment_id');
+        if (paymentId) {
+          await fetch('/api/billing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'sync', paymentId }) }).catch(() => undefined);
+          const synced = await load();
+          if (synced.active) { setMessage({ kind: 'success', text: 'Payment received — Switchboard Pro is active. Thank you!' }); return; }
+        }
         for (let attempt = 0; attempt < 10; attempt += 1) {
           await new Promise((resolve) => setTimeout(resolve, 3000));
           const next = await load();

@@ -3,6 +3,8 @@ import { requireSession } from '../../../lib/auth/require-session';
 import { createCheckout, createPortalLink, DodoError, isDodoConfigured } from '../../../lib/billing/dodo';
 import { FREE_OPERATIONS, PRO_PRICE_USD } from '../../../lib/billing/entitlements';
 import { errorResponse } from '../../../lib/server/http';
+import { syncFromPayment } from '../../../lib/billing/sync';
+import { hasServiceRole } from '../../../lib/server/admin';
 import { getStore } from '../../../lib/server/store';
 
 export const runtime = 'nodejs';
@@ -35,7 +37,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const { session, response } = await requireSession(request);
   if (response) return response;
-  const body = await request.json().catch(() => null) as { action?: unknown } | null;
+  const body = await request.json().catch(() => null) as { action?: unknown; paymentId?: unknown } | null;
   const origin = new URL(request.url).origin;
   try {
     const store = getStore(session!);
@@ -56,6 +58,12 @@ export async function POST(request: Request) {
         returnUrl: `${origin}/billing?checkout=done`,
       });
       return NextResponse.json({ url });
+    }
+
+    if (body?.action === 'sync') {
+      if (typeof body.paymentId !== 'string' || !isDodoConfigured() || !hasServiceRole()) return NextResponse.json({ synced: false });
+      const result = await syncFromPayment(body.paymentId, { userId: session!.userId, email: session!.email });
+      return NextResponse.json(result);
     }
 
     if (body?.action === 'portal') {

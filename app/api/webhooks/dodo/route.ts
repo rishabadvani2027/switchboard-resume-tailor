@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import { dodoConfig, statusFromEvent, verifyWebhook, type DodoSubscriptionEvent } from '../../../../lib/billing/dodo';
 import { adminRest, hasServiceRole } from '../../../../lib/server/admin';
+import { applySubscriptionEvent } from '../../../../lib/billing/sync';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Receives Dodo Payments webhooks and keeps public.subscriptions in sync.
@@ -21,6 +20,7 @@ export async function POST(request: Request) {
 
   const rawBody = await request.text();
   if (!verifyWebhook(rawBody, request.headers, secret)) {
+    await recordRejected(request, rawBody);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     if (seen.length > 0) return NextResponse.json({ received: true, duplicate: true });
 
     const status = event.type.startsWith('subscription.') ? statusFromEvent(event) : null;
-    if (status) await applySubscription(event, status);
+    if (status) await applySubscriptionEvent(event, status);
 
     await adminRest('billing_events', {
       method: 'POST',
@@ -48,38 +48,20 @@ export async function POST(request: Request) {
   }
 }
 
-async function applySubscription(event: DodoSubscriptionEvent, status: string) {
-  const data = event.data;
-  const subscriptionId = data.subscription_id;
-  const customerId = data.customer?.customer_id ?? null;
-
-  // Find the account: checkout metadata first, then a row we already linked to this subscription/customer.
-  let userId = data.metadata?.user_id && UUID.test(data.metadata.user_id) ? data.metadata.user_id : null;
-  if (!userId && subscriptionId) {
-    const rows = await adminRest<Array<{ user_id: string }>>(`subscriptions?select=user_id&provider_subscription_id=eq.${encodeURIComponent(subscriptionId)}`);
-    userId = rows[0]?.user_id ?? null;
-  }
-  if (!userId && customerId) {
-    const rows = await adminRest<Array<{ user_id: string }>>(`subscriptions?select=user_id&provider_customer_id=eq.${encodeURIComponent(customerId)}`);
-    userId = rows[0]?.user_id ?? null;
-  }
-  if (!userId) {
-    console.warn('[dodo] could not match subscription to a user', event.type, subscriptionId);
-    return;
-  }
-
-  await adminRest('subscriptions?on_conflict=user_id', {
+/**
+ * Keeps a trace of rejected deliveries (no secrets, no payload) so a signing-secret mismatch
+ * can be diagnosed from the database. Only deliveries that look like Dodo's are recorded.
+ */
+async function recordRejected(request: Request, rawBody: string) {
+  const id = request.headers.get('webhook-id');
+  if (!id || !request.headers.get('webhook-signature')) return;
+  let type = 'unknown';
+  try { type = String((JSON.parse(rawBody) as { type?: unknown }).type ?? 'unknown').slice(0, 60); } catch { /* ignore */ }
+  const timestamp = Number(request.headers.get('webhook-timestamp'));
+  const skew = Number.isFinite(timestamp) ? Math.round(Date.now() / 1000 - timestamp) : null;
+  await adminRest('billing_events', {
     method: 'POST',
-    prefer: 'resolution=merge-duplicates,return=minimal',
-    body: JSON.stringify({
-      user_id: userId,
-      status,
-      provider_customer_id: customerId,
-      provider_subscription_id: subscriptionId ?? null,
-      product_id: data.product_id ?? null,
-      current_period_end: data.next_billing_date ?? null,
-      cancel_at_period_end: Boolean(data.cancel_at_next_billing_date),
-      updated_at: new Date().toISOString(),
-    }),
-  });
+    prefer: 'resolution=ignore-duplicates,return=minimal',
+    body: JSON.stringify({ id: `rejected:${id}`.slice(0, 200), type: `rejected:${type}`, payload: { reason: 'signature-mismatch', clock_skew_seconds: skew } }),
+  }).catch(() => undefined);
 }
