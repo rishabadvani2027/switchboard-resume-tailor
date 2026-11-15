@@ -431,3 +431,15 @@ test('typed bullet characters in a Word list are kept when the line is rewritten
   const out = await (await JSZip.loadAsync(result.file)).file('word/document.xml')!.async('string');
   assert.ok(out.includes('• Designed REST APIs.'));
 });
+
+test('reading a PDF leaves the uploaded bytes intact for storage and layout capture', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const path = '/home/claude/fixtures/styled.pdf';
+  if (!existsSync(path)) return; // fixture only exists in the dev sandbox
+  const { extractDocumentText } = await import('../lib/documents/validation');
+  const raw = readFileSync(path);
+  const bytes = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.length);
+  const result = await extractDocumentText({ name: 'cv.pdf', type: 'application/pdf', size: raw.length, arrayBuffer: async () => bytes });
+  assert.ok(result.text.includes('Priya Sharma'));
+  assert.equal(result.bytes.byteLength, raw.length);
+});

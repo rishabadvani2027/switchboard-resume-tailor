@@ -75,7 +75,8 @@ async function extractPdf(bytes: ArrayBuffer) {
   } catch {
     // Fall back to pdfjs' default worker resolution.
   }
-  const parser = new PDFParse({ data: new Uint8Array(bytes) });
+  // pdf.js transfers (empties) the buffer it is given, so pass a copy and keep the original intact.
+  const parser = new PDFParse({ data: new Uint8Array(bytes.slice(0)) });
   try {
     return (await parser.getText()).text;
   } finally {
