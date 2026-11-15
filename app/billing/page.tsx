@@ -107,7 +107,7 @@ export default function BillingPage() {
       <div className="page-head"><div><div className="eyebrow">Plans</div><h1>Keep tailoring when the free runs out.</h1><p>Start with three complete analyses. Then unlock unlimited tailoring with a one-time ${price} payment — no subscription.</p></div></div>
       {limitHit && !billing?.active && <div className="notice error" role="alert" style={{ marginBottom: 12 }}>You have used all your free analyses. Upgrade, or add your own AI key to keep going for free.</div>}
       {message && <div className={`notice ${message.kind}`} role="status" style={{ marginBottom: 12 }}>{message.text}</div>}
-      {!billing?.active && <div className="notice info">Prefer not to subscribe? <a className="inline-link" href="/settings">Bring your own AI key</a> for unlimited free analyses — you pay your AI provider directly.</div>}
+      {!billing?.active && <div className="notice info">Prefer not to pay? <a className="inline-link" href="/settings">Bring your own AI key</a> for unlimited free analyses — you pay your AI provider directly.</div>}
       <div className="grid-2" style={{ marginTop: 18 }}>
         <div className="card">
           <div className="eyebrow">Free</div>
