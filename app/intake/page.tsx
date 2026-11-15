@@ -151,7 +151,7 @@ export default function Intake() {
             {uploaded && <div className="field-note format-kept">✓ {uploaded.name} — {uploaded.format === 'docx' ? 'your Word formatting will be kept in the final file' : uploaded.format === 'pdf' ? 'your PDF layout will be reproduced in the final file' : 'text file'}</div>}
             <input aria-label="Upload resume" type="file" disabled={busy !== ''} accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => onUpload(event, 'resume')} />
           </label>
-          <label><span className="label">Resume text</span><textarea className="textarea tall" value={resume} placeholder="…or paste your resume here" onChange={(e) => setResume(e.target.value)} /></label>
+          <label><span className="label">Resume text</span><textarea data-clarity-mask="True" className="textarea tall" value={resume} placeholder="…or paste your resume here" onChange={(e) => setResume(e.target.value)} /></label>
           <div className="field-note">{resume.trim() ? `${resume.trim().split(/\s+/).length} words` : 'Tip: check the extracted text looks right before analysing.'}</div>
         </div>
         <div className="card stack">
@@ -161,7 +161,7 @@ export default function Intake() {
             <div className="field-note">Optional — or paste the posting below</div>
             <input aria-label="Upload job description" type="file" disabled={busy !== ''} accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => onUpload(event, 'job_description')} />
           </label>
-          <label><span className="label">Job description</span><textarea className="textarea tall" value={jd} placeholder="Paste the complete job posting — title, responsibilities and requirements" onChange={(e) => setJd(e.target.value)} /></label>
+          <label><span className="label">Job description</span><textarea data-clarity-mask="True" className="textarea tall" value={jd} placeholder="Paste the complete job posting — title, responsibilities and requirements" onChange={(e) => setJd(e.target.value)} /></label>
           <div className="notice info">Suggestions only rephrase or reorganise what is already in your resume. Nothing is invented, and you approve every change.</div>
         </div>
       </div>

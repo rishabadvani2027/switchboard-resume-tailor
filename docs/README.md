@@ -82,6 +82,17 @@ Uploaded resumes are stored privately and linked to the analysis (`resume_docume
   (`lib/format/docx-generate.ts`). This is a close reproduction, not a byte-level edit.
 - **Pasted text:** a clean default layout.
 
+## Analytics & SEO
+
+- **Microsoft Clarity:** set `NEXT_PUBLIC_CLARITY_PROJECT_ID` (Clarity → Settings → Overview →
+  Project ID). Resume text, job descriptions, the review diff, the export preview and API-key
+  fields are marked `data-clarity-mask="True"` and are never recorded.
+- **Google Search Console:** verify with a DNS TXT record (Domain property, recommended) or set
+  `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` to the HTML-tag `content` value (URL-prefix property).
+  Submit `https://switchboardapp.studio/sitemap.xml`. `robots.txt` allows the public pages and
+  blocks the app, API and preview deployments.
+- Link previews (WhatsApp, LinkedIn, X) use the Open Graph card in `app/opengraph-image.tsx`.
+
 ## Bring your own key
 
 Users can open **AI settings** (`/settings`) and paste their own API key for any supported provider.

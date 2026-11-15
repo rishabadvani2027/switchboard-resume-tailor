@@ -92,7 +92,7 @@ export default function SettingsPage() {
               </select>
             </label>
             <label><span className="label">API key</span>
-              <input className="input" type="password" autoComplete="off" spellCheck={false} value={apiKey}
+              <input data-clarity-mask="True" className="input" type="password" autoComplete="off" spellCheck={false} value={apiKey}
                 placeholder={saved?.provider === provider ? `Saved: ${maskKey(saved.apiKey)} — paste to replace` : meta.keyHint || 'Paste your API key'}
                 onChange={(e) => setApiKey(e.target.value)} />
               <span className="field-note">Get a key at <a className="inline-link" href={meta.keyUrl} target="_blank" rel="noreferrer">{meta.keyUrl.replace('https://', '')}</a>. A ChatGPT or Claude chat subscription does not include API access — the key comes from the developer platform.</span>

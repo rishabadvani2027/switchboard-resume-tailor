@@ -82,7 +82,7 @@ function PaperPreview({ lines, page }: { lines: StyledLine[]; page: PageSize }) 
     return () => observer.disconnect();
   }, [page, lines]);
   return (
-    <div ref={outer} className="paper-wrap" style={{ height }}>
+    <div ref={outer} data-clarity-mask="True" className="paper-wrap" style={{ height }}>
       <div ref={inner} className="paper" style={{ width: `${page.width}pt`, minHeight: `${page.height}pt`, padding: `${page.marginTop}pt ${page.marginLeft}pt`, transform: `scale(${scale})` }}>
         {lines.map((line, index) => (
           <p key={index} style={{ fontFamily: cssFont(line), fontSize: `${line.size}pt`, fontWeight: line.bold ? 700 : 400, fontStyle: line.italic ? 'italic' : 'normal', textAlign: line.align, margin: `${line.gapBefore}pt 0 0 ${line.indent}pt`, lineHeight: 1.2, whiteSpace: 'pre-wrap' }}>
@@ -179,7 +179,7 @@ export default function ExportPage() {
           <div className="export-layout">
             <div className="card">
               <div className="card-title-row"><h3>Final document</h3><span className="field-note">{format === 'docx' ? 'Preview — the Word download keeps your exact formatting' : 'Preview of the downloaded layout'}</span></div>
-              {result.styled && result.page ? <PaperPreview lines={result.styled} page={result.page} /> : <pre className="preview-text plain">{result.content}</pre>}
+              {result.styled && result.page ? <PaperPreview lines={result.styled} page={result.page} /> : <pre data-clarity-mask="True" className="preview-text plain">{result.content}</pre>}
             </div>
             <div className="card stack summary-col">
               <div>

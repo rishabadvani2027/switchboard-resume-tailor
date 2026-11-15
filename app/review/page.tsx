@@ -159,7 +159,7 @@ export default function Review() {
       {error && <div className="notice error" role="alert">{error}</div>}
 
       <div className="review-layout">
-        <section>
+        <section data-clarity-mask="True">
           <div className="diff-toolbar">
             <div className="tabs" role="tablist">
               <button role="tab" aria-selected={view === 'diff'} className={view === 'diff' ? 'active' : ''} onClick={() => setView('diff')}>Changes <span className="count">{changes.length}</span></button>
@@ -254,7 +254,7 @@ export default function Review() {
 
           <div className="card summary">
             <button className="link-button" onClick={() => setShowJd(!showJd)}>{showJd ? 'Hide' : 'Show'} job description</button>
-            {showJd && <pre className="jd-text">{analysis.jobDescription}</pre>}
+            {showJd && <pre data-clarity-mask="True" className="jd-text">{analysis.jobDescription}</pre>}
           </div>
         </aside>
       </div>
