@@ -61,7 +61,8 @@ export async function POST(request: Request) {
     }
 
     if (body?.action === 'sync') {
-      if (typeof body.paymentId !== 'string' || !isDodoConfigured() || !hasServiceRole()) return NextResponse.json({ synced: false });
+      if (typeof body.paymentId !== 'string') return NextResponse.json({ synced: false, reason: 'no-payment-id' });
+      if (!isDodoConfigured() || !hasServiceRole()) return NextResponse.json({ synced: false, reason: 'not-configured' });
       const result = await syncFromPayment(body.paymentId, { userId: session!.userId, email: session!.email });
       return NextResponse.json(result);
     }

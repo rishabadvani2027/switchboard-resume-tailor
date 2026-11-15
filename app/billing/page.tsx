@@ -53,7 +53,10 @@ export default function BillingPage() {
         setMessage({ kind: 'info', text: 'Confirming your payment…' });
         const paymentId = params.get('payment_id');
         if (paymentId) {
-          await fetch('/api/billing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'sync', paymentId }) }).catch(() => undefined);
+          const sync = await fetch('/api/billing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'sync', paymentId }) })
+            .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))
+            .catch(() => null);
+          if (sync && !(sync.body as { synced?: boolean }).synced) console.warn('[billing] payment sync did not activate Pro', sync);
           const synced = await load();
           if (synced.active) { setMessage({ kind: 'success', text: 'Payment received — Switchboard Pro is active. Thank you!' }); return; }
         }
