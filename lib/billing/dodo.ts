@@ -41,11 +41,17 @@ async function dodoRequest<T>(path: string, body: unknown): Promise<T> {
   }).catch((error: unknown) => { throw new DodoError(`Dodo unreachable: ${String(error)}`); });
   if (!response.ok) {
     const detail = (await response.text().catch(() => '')).slice(0, 500);
+    let providerMessage = '';
+    try {
+      const parsed = JSON.parse(detail) as { message?: unknown; error?: unknown; code?: unknown };
+      const text = [parsed.code, parsed.message ?? parsed.error].filter((part) => typeof part === 'string').join(': ');
+      providerMessage = text.slice(0, 200);
+    } catch { providerMessage = detail.slice(0, 120); }
     throw new DodoError(`Dodo ${path.split('?')[0]} failed: ${response.status} ${detail}`, response.status === 401
       ? `Payments are misconfigured: Dodo rejected the API key in ${dodoConfig.environment === 'live_mode' ? 'live' : 'test'} mode.`
-      : response.status === 404 || response.status === 422
+      : response.status === 404
         ? 'Payments are misconfigured: Dodo could not find the product. Check DODO_PAYMENTS_PRODUCT_ID.'
-        : undefined);
+        : `Checkout could not be started (Dodo ${response.status}${providerMessage ? `: ${providerMessage}` : ''}).`);
   }
   return response.json() as Promise<T>;
 }
