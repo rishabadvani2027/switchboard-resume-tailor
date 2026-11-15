@@ -26,15 +26,36 @@ const normalize = (text: string) => text.toLowerCase()
 
 const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** True when the keyword (or all of its significant words) appears in the text. */
+/** Light stemmer so "scaling"/"scale", "APIs"/"API" and "RESTful"/"REST" match like ATS tools do. */
+export function stem(word: string) {
+  let w = word.toLowerCase();
+  if (w.length <= 3) return w;
+  w = w.replace(/(ations|ation|ities|ity|ings|ing|ments|ment|ness|ers|er|ed|ful|es|s)$/, '');
+  if (w.length > 4 && w.endsWith('e')) w = w.slice(0, -1);
+  return w;
+}
+
+const wordsOf = (normalizedText: string) => normalizedText.split(/[\s/.-]+/).map((word) => word.replace(/^[^a-z0-9+#]+|[^a-z0-9+#]+$/g, '')).filter(Boolean);
+
+function hasWord(textStems: string[], textWords: Set<string>, word: string) {
+  if (word.length <= 2 || /[+#]/.test(word)) return textWords.has(word); // "go", "c++", "c#" must match exactly
+  const target = stem(word);
+  return textStems.some((candidate) => candidate === target
+    || (Math.min(candidate.length, target.length) >= 4 && (candidate.startsWith(target) || target.startsWith(candidate))));
+}
+
+/** True when the keyword, or all of its significant words (allowing word forms), appears in the text. */
 export function containsKeyword(normalizedText: string, keyword: string) {
   const phrase = normalize(keyword);
   if (!phrase) return false;
-  const boundary = (word: string) => new RegExp(`(^|[^a-z0-9+#])${escapeRegex(word)}(?=$|[^a-z0-9+#])`);
-  if (boundary(phrase).test(normalizedText)) return true;
-  const words = phrase.split(/[\s/-]+/).filter((word) => word.length >= 3 && !STOPWORDS.has(word));
-  if (words.length < 2) return false;
-  return words.every((word) => boundary(word).test(normalizedText) || (word.endsWith('s') && boundary(word.slice(0, -1)).test(normalizedText)));
+  const boundary = new RegExp(`(^|[^a-z0-9+#])${escapeRegex(phrase)}(?=$|[^a-z0-9+#])`);
+  if (boundary.test(normalizedText)) return true;
+  const textWords = wordsOf(normalizedText);
+  const textStems = textWords.map(stem);
+  const wordSet = new Set(textWords);
+  const words = wordsOf(phrase).filter((word) => !STOPWORDS.has(word) && (word.length >= 3 || /[+#]/.test(word) || wordsOf(phrase).length === 1));
+  if (words.length === 0) return false;
+  return words.every((word) => hasWord(textStems, wordSet, word));
 }
 
 /** Fallback keyword extraction from the job description when the AI didn't provide a list. */
@@ -48,13 +69,22 @@ export function extractJobKeywords(jobDescription: string, limit = 20): string[]
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit).map(([word]) => word);
 }
 
-/** The keyword set used for scoring: the AI's matched + missing lists, de-duplicated. */
+/**
+ * The keyword set used for scoring: the AI's matched + missing lists, kept only where the term
+ * actually appears in the job description (so resume-only phrasing can't inflate or skew it).
+ */
 export function jobKeywords(jobDescription: string, insights?: { matchedKeywords?: string[]; missingKeywords?: string[] }) {
+  const jd = normalize(jobDescription);
   const fromAi = [...(insights?.matchedKeywords ?? []), ...(insights?.missingKeywords ?? [])]
     .map((keyword) => keyword.trim()).filter((keyword) => keyword.length > 1 && keyword.length <= 60);
   const seen = new Set<string>();
-  const unique = fromAi.filter((keyword) => { const key = normalize(keyword); if (!key || seen.has(key)) return false; seen.add(key); return true; });
-  return unique.length >= 5 ? unique.slice(0, 30) : extractJobKeywords(jobDescription);
+  const grounded = fromAi.filter((keyword) => {
+    const key = normalize(keyword);
+    if (!key || seen.has(key) || !containsKeyword(jd, keyword)) return false;
+    seen.add(key);
+    return true;
+  });
+  return grounded.length >= 5 ? grounded.slice(0, 30) : extractJobKeywords(jobDescription);
 }
 
 const SECTION_PATTERNS: Array<[string, RegExp]> = [

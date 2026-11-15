@@ -334,3 +334,16 @@ test('adding confirmed skills goes on the skills line and lifts the sample past 
   assert.equal(alt?.original, 'SKILLS');
   assert.doesNotThrow(() => assembleResume(SAMPLE_CV, [{ ...taken, status: 'approved' }, alt!]));
 });
+
+test('ATS keywords must come from the job and match common word forms', async () => {
+  const { containsKeyword, jobKeywords } = await import('../lib/ats/score');
+  assert.equal(containsKeyword('designed restful apis', 'REST APIs'), true);
+  assert.equal(containsKeyword('scaling web services', 'scale'), true);
+  assert.equal(containsKeyword('c++ and go', 'C++'), true);
+  assert.equal(containsKeyword('good engineer', 'Go'), false);
+  const jd = 'Backend engineer. Python, Go, PostgreSQL, Docker, Kubernetes, distributed systems, mentoring.';
+  const keywords = jobKeywords(jd, { matchedKeywords: ['Python', 'Go', 'REST APIs', 'database performance'], missingKeywords: ['Kubernetes', 'distributed systems', 'mentoring', 'Docker'] });
+  assert.ok(!keywords.includes('REST APIs'));
+  assert.ok(!keywords.includes('database performance'));
+  assert.ok(keywords.includes('Kubernetes'));
+});

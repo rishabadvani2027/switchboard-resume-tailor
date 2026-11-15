@@ -33,21 +33,21 @@ Change kinds:
 - "addition": keep "original" exactly as is and insert "proposed" as a NEW line directly after it (e.g. a new skill line or a new bullet that is clearly supported by existing content). "proposed" contains only the new line(s).
 - "removal": delete "original" because it is irrelevant or weakens the application for this role. "proposed" must be "".
 
-Applicant tracking systems (ATS) match keywords literally. Wherever the resume already shows a skill or responsibility that the job names, rephrase it using the job description's exact words (e.g. "REST APIs" → "RESTful API design" if that is the job's term), so the candidate's real experience is recognised. Make sure every job keyword the resume genuinely supports appears at least once, ideally in the summary and the skills line.
+Applicant tracking systems (ATS) match keywords literally. Wherever the resume already shows a skill or responsibility that the job names, rephrase it using the job description's exact words (e.g. "REST APIs" → "RESTful API design" if that is the job's term), so the candidate's real experience is recognised. Make sure every job keyword the resume genuinely supports appears at least once, ideally in the summary and the skills line. Never remove or replace a word the job description uses that is already in the resume (e.g. don't change "database performance" to "PostgreSQL performance" if the job says "database"; write "PostgreSQL database performance").
 
 Aim for 6–14 high-impact changes, prioritising the summary/headline, the most recent role, and the skills section.
 Every change needs a short "rationale" (max ~25 words) that cites the job requirement it serves.`;
 
 function userPrompt(input: TailoringInput) {
-  return `<job_description>\n${input.jobDescription.trim()}\n</job_description>\n\n<resume>\n${input.resume}\n</resume>\n\nPropose tailored changes for this resume and job description. Also list the job's important keywords already evidenced in the resume (matchedKeywords) and important keywords the resume does not show (missingKeywords), plus a 1–2 sentence summary of fit.`;
+  return `<job_description>\n${input.jobDescription.trim()}\n</job_description>\n\n<resume>\n${input.resume}\n</resume>\n\nPropose tailored changes for this resume and job description. Also list the job's 10–20 most important keywords (skills, tools, responsibilities, domain terms), each copied exactly as worded in the JOB DESCRIPTION: put those the resume already evidences in matchedKeywords and the rest in missingKeywords. Add a 1–2 sentence summary of fit.`;
 }
 
 const OUTPUT_SCHEMA = {
   type: 'object',
   properties: {
     summary: { type: 'string', description: '1–2 sentence assessment of how well the resume fits the role.' },
-    matchedKeywords: { type: 'array', items: { type: 'string' }, description: 'Up to 15 job keywords already evidenced in the resume.' },
-    missingKeywords: { type: 'array', items: { type: 'string' }, description: 'Up to 15 important job keywords the resume does not show.' },
+    matchedKeywords: { type: 'array', items: { type: 'string' }, description: 'Job keywords, worded exactly as in the job description, that the resume already evidences.' },
+    missingKeywords: { type: 'array', items: { type: 'string' }, description: 'Important job keywords, worded exactly as in the job description, that the resume does not show.' },
     changes: {
       type: 'array',
       items: {
