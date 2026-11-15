@@ -35,8 +35,15 @@ export default function BillingPage() {
     const params = new URLSearchParams(window.location.search);
     setLimitHit(params.get('reason') === 'limit');
     const returnedFromCheckout = params.get('checkout') === 'done';
+    // Dodo appends ?status=… to the return URL; a declined or abandoned payment must not be shown as "confirming".
+    const returnStatus = (params.get('status') || '').toLowerCase();
+    const paymentFailed = returnedFromCheckout && ['failed', 'cancelled', 'canceled', 'requires_payment_method', 'expired'].includes(returnStatus);
     load()
       .then(async (first) => {
+        if (paymentFailed && !first.active) {
+          setMessage({ kind: 'error', text: 'Your payment didn’t go through, and you haven’t been charged. Please try again with another card or payment method.' });
+          return;
+        }
         if (!returnedFromCheckout || first.active) {
           if (returnedFromCheckout) setMessage({ kind: 'success', text: 'Payment received — Switchboard Pro is active. Thank you!' });
           return;
