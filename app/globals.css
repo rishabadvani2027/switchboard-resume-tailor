@@ -171,5 +171,25 @@ select.input { appearance:auto; }
 .inline-link { color:var(--blue); font-weight:600; }
 .inline-link:hover { text-decoration:underline; }
 .ai-badge { display:flex; align-items:center; gap:12px; font-size:13px; }
+.ats-row { display:flex; align-items:center; gap:10px; margin:14px 0 6px; }
+.ats-row.compact { margin:10px 0 14px; }
+.ats-arrow { color:var(--muted); font-weight:700; }
+.ats-gauge { flex:1; display:grid; justify-items:center; gap:2px; padding:10px 6px; border-radius:12px; background:#f4f6fa; border:1px solid var(--line); }
+.ats-value { font-family:'Space Grotesk',sans-serif; font-size:28px; font-weight:700; line-height:1; }
+.ats-label { font-size:11px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.06em; text-align:center; }
+.ats-muted .ats-value { color:var(--muted); }
+.ats-main.ats-great, .ats-goal.ats-great { background:var(--green-bg); border-color:#8bd5b9; }
+.ats-main.ats-great .ats-value, .ats-goal.ats-great .ats-value { color:var(--green); }
+.ats-main.ats-good .ats-value { color:var(--blue); }
+.ats-main.ats-fair .ats-value { color:var(--amber); }
+.ats-main.ats-low .ats-value { color:var(--red); }
+.ats-goal { border-style:dashed; }
+.ats-checks { margin-top:8px; }
+.ats-checks .summary-row { font-size:13px; }
+.ats-missing { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }
+.chip-pick { cursor:pointer; background:var(--amber-bg); color:var(--amber); border:1px solid transparent; user-select:none; }
+.chip-pick input { display:none; }
+.chip-pick.on { background:var(--green-bg); color:var(--green); border-color:#8bd5b9; }
+.chip-pick.on::before { content:'✓ '; }
 @media (max-width:900px) { .review-layout,.export-layout { grid-template-columns:1fr; } .review-layout .summary-col { position:static; } .dl { grid-template-columns:32px 18px minmax(0,1fr); } }
 @media (max-width:760px) { .nav { padding:0 5vw; } .nav-links a:not(.button) { display:none; } .hero,.grid-2,.review-layout,.change-body { grid-template-columns:1fr; } .hero { padding-top:20px; gap:28px; } .hero-card { transform:none; } .page-head { align-items:flex-start; flex-direction:column; } .summary { position:static; } .change-pane.remove { border-right:0; border-bottom:1px solid #f6d0cd; } .main { padding-top:32px; } }

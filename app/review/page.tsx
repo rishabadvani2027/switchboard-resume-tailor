@@ -1,6 +1,8 @@
 'use client';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Steps } from '../../components/Steps';
+import { AtsScoreCard } from '../../components/AtsScoreCard';
+import { jobKeywords, scoreResume } from '../../lib/ats/score';
 import { buildDocumentBlocks, type DiffLine } from '../../lib/diff';
 import { assembleResume, canExport } from '../../lib/export/assemble';
 import type { ChangeStatus, Insights, ResumeChange } from '../../lib/tailoring/types';
@@ -74,6 +76,29 @@ export default function Review() {
     if (!analysis) return '';
     try { return assembleResume(analysis.source, changes); } catch { return analysis.source; }
   }, [analysis, changes]);
+  const ats = useMemo(() => {
+    if (!analysis) return null;
+    const keywords = jobKeywords(analysis.jobDescription, analysis.insights);
+    let potentialText = preview;
+    try { potentialText = assembleResume(analysis.source, changes, { includePending: true }); } catch { /* keep preview */ }
+    return {
+      before: scoreResume(analysis.source, analysis.jobDescription, keywords),
+      now: scoreResume(preview, analysis.jobDescription, keywords),
+      potential: scoreResume(potentialText, analysis.jobDescription, keywords),
+    };
+  }, [analysis, changes, preview]);
+
+  async function addSkills(skills: string[]) {
+    if (!analysis) return;
+    const response = await fetch('/api/changes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ analysisId: analysis.analysisId, skills }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Those skills could not be added.');
+    setAnalysis((current) => (current ? { ...current, changes: [...current.changes, result.change as ResumeChange] } : current));
+  }
 
   async function decide(body: { changeId?: string; scope?: 'pending' | 'all'; status: ChangeStatus }) {
     if (!analysis) return;
@@ -202,6 +227,7 @@ export default function Review() {
         </section>
 
         <aside className="summary-col">
+          {ats && <AtsScoreCard before={ats.before} now={ats.now} potential={ats.potential} onAddSkills={addSkills} />}
           <div className="card summary">
             <h3>Review summary</h3>
             <div className="progress" aria-label={`${progress}% reviewed`}><span style={{ width: `${progress}%` }} /></div>

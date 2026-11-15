@@ -33,6 +33,8 @@ Change kinds:
 - "addition": keep "original" exactly as is and insert "proposed" as a NEW line directly after it (e.g. a new skill line or a new bullet that is clearly supported by existing content). "proposed" contains only the new line(s).
 - "removal": delete "original" because it is irrelevant or weakens the application for this role. "proposed" must be "".
 
+Applicant tracking systems (ATS) match keywords literally. Wherever the resume already shows a skill or responsibility that the job names, rephrase it using the job description's exact words (e.g. "REST APIs" → "RESTful API design" if that is the job's term), so the candidate's real experience is recognised. Make sure every job keyword the resume genuinely supports appears at least once, ideally in the summary and the skills line.
+
 Aim for 6–14 high-impact changes, prioritising the summary/headline, the most recent role, and the skills section.
 Every change needs a short "rationale" (max ~25 words) that cites the job requirement it serves.`;
 

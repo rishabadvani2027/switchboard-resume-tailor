@@ -37,6 +37,8 @@ export interface Store {
   listAnalyses(limit: number): Promise<AnalysisSummary[]>;
   /** Sets the status of the given changes. Returns null when the analysis does not exist (memory store only). */
   setChangeStatus(analysisId: string, changeIds: string[], status: ChangeStatus): Promise<ResumeChange[] | null>;
+  /** Appends a new change (e.g. skills the user confirmed) to an analysis. */
+  addChange(analysisId: string, change: ResumeChange): Promise<void>;
   saveExport(analysisId: string, content: string): Promise<void>;
   saveDocument(input: { name: string; type: string; bytes: ArrayBuffer; text: string; kind: 'resume' | 'job_description' }): Promise<{ id: string | null }>;
   activateDemoSubscription?(): Promise<void>;
@@ -103,6 +105,10 @@ export class MemoryStore implements Store {
     const ids = new Set(changeIds);
     analysis.changes = analysis.changes.map((change) => (ids.has(change.id) ? { ...change, status } : change));
     return analysis.changes;
+  }
+  async addChange(analysisId: string, change: ResumeChange) {
+    const analysis = await this.getAnalysis(analysisId);
+    if (analysis) analysis.changes = [...analysis.changes, { ...change }];
   }
   async saveExport(analysisId: string, content: string) { memory.exports.set(`${this.userId}:${analysisId}`, content); }
   async saveDocument() { return { id: null }; }
@@ -273,6 +279,27 @@ export class SupabaseStore implements Store {
       });
     }
     return [];
+  }
+
+  async addChange(analysisId: string, change: ResumeChange) {
+    if (!/^[0-9a-f-]{36}$/i.test(analysisId)) return;
+    const last = await this.request<Array<{ position: number }>>(`changes?select=position&analysis_id=eq.${analysisId}&order=position.desc&limit=1`);
+    await this.request('changes', {
+      method: 'POST',
+      prefer: 'return=minimal',
+      body: JSON.stringify({
+        id: change.id,
+        analysis_id: analysisId,
+        user_id: this.userId,
+        section: change.section,
+        kind: change.kind,
+        original: change.original,
+        proposed: change.proposed,
+        rationale: change.rationale,
+        status: change.status,
+        position: (last[0]?.position ?? 0) + 1,
+      }),
+    });
   }
 
   async saveExport(analysisId: string, content: string) {

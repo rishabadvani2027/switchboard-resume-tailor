@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Steps } from '../../components/Steps';
 
-type ExportResult = { content: string; title: string; approved: number; rejected: number; total: number };
+type ExportResult = { content: string; title: string; approved: number; rejected: number; total: number; atsBefore?: number; atsAfter?: number };
 
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
 
@@ -92,6 +92,13 @@ export default function ExportPage() {
             <div className="card stack summary-col">
               <div>
                 <h3>Download</h3>
+                {typeof result.atsAfter === 'number' && (
+                  <div className="ats-row compact">
+                    <div className="ats-gauge ats-muted"><span className="ats-value">{result.atsBefore}</span><span className="ats-label">ATS before</span></div>
+                    <span className="ats-arrow">→</span>
+                    <div className={`ats-gauge ats-main ats-${result.atsAfter >= 90 ? 'great' : result.atsAfter >= 75 ? 'good' : result.atsAfter >= 60 ? 'fair' : 'low'}`}><span className="ats-value">{result.atsAfter}</span><span className="ats-label">ATS after</span></div>
+                  </div>
+                )}
                 <div className="summary-row"><span>Approved</span><strong className="green">{result.approved}</strong></div>
                 <div className="summary-row"><span>Rejected</span><strong className="red">{result.rejected}</strong></div>
               </div>

@@ -58,6 +58,17 @@ npm run lint
 npm run build
 ```
 
+## ATS match score
+
+The review page shows an ATS-style score **before** tailoring, **now** (approved changes only,
+updating live) and **if all suggestions are approved**; export shows before → after. The score is
+deterministic and computed from the resume text (`lib/ats/score.ts`): job keywords found (70),
+standard sections (10), job-title alignment (5), quantified bullets (5), contact details (5) and
+length (5). Keywords come from the AI's matched + missing lists for the job. Users can tick missing
+keywords they genuinely have; `POST /api/changes` adds them to the skills line as an approved
+change (`lib/ats/add-skills.ts`), which is how a tailored resume reliably reaches 90+ without
+inventing experience.
+
 ## Bring your own key
 
 Users can open **AI settings** (`/settings`) and paste their own API key for any supported provider.

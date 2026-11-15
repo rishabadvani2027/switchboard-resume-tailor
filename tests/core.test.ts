@@ -281,3 +281,56 @@ test('a one-time Pro purchase grants lifetime access; a refund removes it', asyn
   assert.equal(subscriptionGrantsAccess({ status: 'lifetime' }), true);
   assert.equal(subscriptionGrantsAccess({ status: 'refunded' }), false);
 });
+
+const SAMPLE_CV = `Priya Sharma
+Software Engineer · priya@example.com · +91 98765 43210 · Bengaluru
+
+SUMMARY
+Backend engineer with 5 years of experience building web services in Python and Go.
+
+EXPERIENCE
+Acme Corp — Software Engineer (2021–2024)
+- Built REST APIs used by internal teams.
+- Worked on database performance for the orders service.
+- Helped with the on-call rotation.
+
+EDUCATION
+B.Tech, Computer Science — VIT (2019)
+
+SKILLS
+Python, Go, PostgreSQL, Docker`;
+const SAMPLE_JOB = `Senior Backend Engineer — Payments Platform
+Design and scale high-throughput APIs. Improve PostgreSQL performance. Kubernetes, mentoring.`;
+const SAMPLE_KEYWORDS = ['Python', 'Go', 'PostgreSQL', 'Docker', 'APIs', 'backend engineer', 'Kubernetes', 'distributed systems', 'mentoring', 'high-throughput APIs', 'incident reviews'];
+
+test('ATS score is deterministic and rewards keyword coverage', async () => {
+  const { scoreResume, containsKeyword } = await import('../lib/ats/score');
+  assert.equal(containsKeyword('built rest apis with postgresql', 'PostgreSQL'), true);
+  assert.equal(containsKeyword('go developer', 'Go'), true);
+  assert.equal(containsKeyword('good engineer', 'Go'), false);
+  assert.equal(containsKeyword('designed high throughput rest apis', 'high-throughput APIs'), true);
+  const first = scoreResume(SAMPLE_CV, SAMPLE_JOB, SAMPLE_KEYWORDS);
+  assert.deepEqual(scoreResume(SAMPLE_CV, SAMPLE_JOB, SAMPLE_KEYWORDS), first);
+  assert.deepEqual(first.missing.sort(), ['Kubernetes', 'distributed systems', 'high-throughput APIs', 'incident reviews', 'mentoring'].sort());
+  assert.ok(first.score < 80, `before score ${first.score}`);
+});
+
+test('adding confirmed skills goes on the skills line and lifts the sample past 90', async () => {
+  const { scoreResume } = await import('../lib/ats/score');
+  const { buildSkillsChange } = await import('../lib/ats/add-skills');
+  const before = scoreResume(SAMPLE_CV, SAMPLE_JOB, SAMPLE_KEYWORDS);
+  const add = buildSkillsChange(SAMPLE_CV, [], before.missing, 'chg-u01');
+  assert.ok(add);
+  assert.equal(add!.kind, 'edit');
+  assert.equal(add!.original, 'Python, Go, PostgreSQL, Docker');
+  const after = assembleResume(SAMPLE_CV, [add!]);
+  const score = scoreResume(after, SAMPLE_JOB, SAMPLE_KEYWORDS).score;
+  assert.ok(score >= 90, `after score ${score}`);
+
+  // If the skills line already has a pending change, insert after the heading instead.
+  const taken = { ...change('pending'), id: 'x', original: 'Python, Go, PostgreSQL, Docker', proposed: 'Python, Go' };
+  const alt = buildSkillsChange(SAMPLE_CV, [taken], ['Kubernetes'], 'chg-u02');
+  assert.equal(alt?.kind, 'addition');
+  assert.equal(alt?.original, 'SKILLS');
+  assert.doesNotThrow(() => assembleResume(SAMPLE_CV, [{ ...taken, status: 'approved' }, alt!]));
+});

@@ -3,6 +3,7 @@ import { requireSession } from '../../../lib/auth/require-session';
 import { assembleResume, canExport } from '../../../lib/export/assemble';
 import { errorResponse } from '../../../lib/server/http';
 import { getStore } from '../../../lib/server/store';
+import { jobKeywords, scoreResume } from '../../../lib/ats/score';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
     const content = assembleResume(analysis.source, analysis.changes);
     await store.saveExport(analysis.id, content);
     const approved = analysis.changes.filter((change) => change.status === 'approved').length;
+    const keywords = jobKeywords(analysis.jobDescription, analysis.insights);
+    const atsBefore = scoreResume(analysis.source, analysis.jobDescription, keywords).score;
+    const atsAfter = scoreResume(content, analysis.jobDescription, keywords).score;
     return NextResponse.json({
       content,
       title: analysis.title,
@@ -30,6 +34,8 @@ export async function POST(request: Request) {
       approved,
       rejected: analysis.changes.length - approved,
       total: analysis.changes.length,
+      atsBefore,
+      atsAfter,
     });
   } catch (error) {
     return errorResponse(error, 'The export could not be created.');
