@@ -347,3 +347,10 @@ test('ATS keywords must come from the job and match common word forms', async ()
   assert.ok(!keywords.includes('database performance'));
   assert.ok(keywords.includes('Kubernetes'));
 });
+
+test('a new bullet suggested after an existing one stays on its own line', () => {
+  const [bullet] = normalizeChanges(RESUME, [{ section: 'Experience', kind: 'addition', original: '- Organised the team lunch.', proposed: '- Mentored two junior engineers.', rationale: 'r' }]);
+  assert.equal(bullet.kind, 'addition');
+  const out = assembleResume(RESUME, [{ ...bullet, status: 'approved' }]);
+  assert.ok(out.includes('- Organised the team lunch.\n- Mentored two junior engineers.'));
+});

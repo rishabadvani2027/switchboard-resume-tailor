@@ -107,7 +107,8 @@ export function normalizeChanges(source: string, raw: RawChange[]): ResumeChange
       // Models sometimes repeat the anchor in the proposed text; keep only the new part.
       if (proposed.startsWith(original)) proposed = proposed.slice(original.length);
       // "Append ', Kubernetes' to this line" is really an edit of the line, not a new line.
-      if (/^[ \t]*[,;:&/|·–-]/.test(proposed) && !proposed.includes('\n')) {
+      // Dashes and bullets are not separators here: "- Mentored…" is a new bullet line.
+      if (/^[ \t]*[,;:&/|]/.test(proposed) && !proposed.includes('\n')) {
         kind = 'edit';
         proposed = `${original}${proposed.replace(/^[ \t]+(?=[,;:])/, '')}`;
       }
