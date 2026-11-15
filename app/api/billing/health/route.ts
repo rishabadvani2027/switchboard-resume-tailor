@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     report.dodoProductLookup = product ? product.status : 'unreachable';
     if (product?.ok) {
       const body = await product.json().catch(() => ({})) as { is_recurring?: boolean; price?: { type?: string } };
-      report.productIsSubscription = Boolean(body.is_recurring) || body.price?.type === 'recurring_price';
+      report.productType = Boolean(body.is_recurring) || body.price?.type === 'recurring_price' ? 'subscription' : 'one-time';
     }
   }
 

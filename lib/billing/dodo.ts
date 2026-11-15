@@ -7,7 +7,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  * Environment:
  *   DODO_PAYMENTS_API_KEY         secret API key from the Dodo dashboard
  *   DODO_PAYMENTS_WEBHOOK_SECRET  signing secret of the webhook endpoint (whsec_…)
- *   DODO_PAYMENTS_PRODUCT_ID      the $9.99/month subscription product (pdt_…)
+ *   DODO_PAYMENTS_PRODUCT_ID      the Switchboard Pro product (pdt_…), one-time $9.99
  *   DODO_PAYMENTS_ENVIRONMENT     "test_mode" (default) or "live_mode"
  */
 // Values pasted into a dashboard often carry stray spaces, line breaks or quotes; strip them.
@@ -103,7 +103,10 @@ export type DodoSubscriptionEvent = {
   type: string;
   data: {
     payload_type?: string;
-    subscription_id?: string;
+    payment_id?: string;
+    refund_id?: string;
+    is_partial?: boolean;
+    subscription_id?: string | null;
     status?: string;
     product_id?: string;
     next_billing_date?: string | null;
@@ -145,13 +148,15 @@ export function statusFromEvent(event: DodoSubscriptionEvent): string | null {
  * until the end of the period the customer already paid for.
  */
 export function subscriptionGrantsAccess(row: { status: string; current_period_end?: string | null }, now = Date.now()) {
-  if (ACCESS_STATUSES.has(row.status) || row.status === 'trialing') return true;
+  // 'lifetime' = paid the one-time Pro fee.
+  if (row.status === 'lifetime' || ACCESS_STATUSES.has(row.status) || row.status === 'trialing') return true;
   if (row.status === 'cancelled' && row.current_period_end) return new Date(row.current_period_end).getTime() > now;
   return false;
 }
 
 type DodoPayment = {
   payment_id: string;
+  product_cart?: Array<{ product_id?: string }> | null;
   status?: string | null;
   subscription_id?: string | null;
   customer?: { customer_id?: string; email?: string };

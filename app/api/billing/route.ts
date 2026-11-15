@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       active: Boolean(subscription?.active),
       status: subscription?.status ?? null,
+      lifetime: subscription?.status === 'lifetime',
       currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
       cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
       canManage: Boolean(subscription?.customerId) && isDodoConfigured(),
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
     if (body?.action === 'checkout') {
       if (!isDodoConfigured()) return NextResponse.json({ error: 'Online checkout is not set up yet.' }, { status: 501 });
       const subscription = await store.getSubscription();
-      if (subscription?.active) return NextResponse.json({ error: 'You already have an active subscription.' }, { status: 409 });
+      if (subscription?.active) return NextResponse.json({ error: 'You already have Switchboard Pro.' }, { status: 409 });
       const url = await createCheckout({
         userId: session!.userId,
         email: session!.email,
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
 
     if (body?.action === 'portal') {
       const subscription = await store.getSubscription();
-      if (!subscription?.customerId || !isDodoConfigured()) return NextResponse.json({ error: 'No subscription to manage yet.' }, { status: 404 });
+      if (!subscription?.customerId || !isDodoConfigured()) return NextResponse.json({ error: 'No purchases to show yet.' }, { status: 404 });
       const url = await createPortalLink(subscription.customerId, `${origin}/billing`);
       return NextResponse.json({ url });
     }

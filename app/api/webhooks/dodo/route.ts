@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { dodoConfig, statusFromEvent, verifyWebhook, type DodoSubscriptionEvent } from '../../../../lib/billing/dodo';
 import { adminRest, hasServiceRole } from '../../../../lib/server/admin';
-import { applySubscriptionEvent } from '../../../../lib/billing/sync';
+import { applyOneTimePayment, applyRefund, applySubscriptionEvent } from '../../../../lib/billing/sync';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,6 +35,8 @@ export async function POST(request: Request) {
 
     const status = event.type.startsWith('subscription.') ? statusFromEvent(event) : null;
     if (status) await applySubscriptionEvent(event, status);
+    else if (event.type === 'payment.succeeded') await applyOneTimePayment(event);
+    else if (event.type === 'refund.succeeded') await applyRefund(event);
 
     await adminRest('billing_events', {
       method: 'POST',

@@ -6,7 +6,7 @@ export function canStartOperation(completedOperations: number, subscribed: boole
 }
 
 export function entitlementMessage(completedOperations: number, subscribed: boolean) {
-  if (subscribed) return 'Active subscription';
+  if (subscribed) return 'Switchboard Pro';
   if (completedOperations < FREE_OPERATIONS) {
     const remaining = FREE_OPERATIONS - completedOperations;
     return `${remaining} free ${remaining === 1 ? 'analysis' : 'analyses'} remaining`;

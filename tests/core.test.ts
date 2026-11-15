@@ -275,3 +275,9 @@ test('subscription status mapping and access rules', async () => {
   assert.equal(subscriptionGrantsAccess({ status: 'cancelled', current_period_end: '2026-12-01T00:00:00Z' }, now), true);
   assert.equal(subscriptionGrantsAccess({ status: 'cancelled', current_period_end: '2026-11-01T00:00:00Z' }, now), false);
 });
+
+test('a one-time Pro purchase grants lifetime access; a refund removes it', async () => {
+  const { subscriptionGrantsAccess } = await import('../lib/billing/dodo');
+  assert.equal(subscriptionGrantsAccess({ status: 'lifetime' }), true);
+  assert.equal(subscriptionGrantsAccess({ status: 'refunded' }), false);
+});

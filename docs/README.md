@@ -68,15 +68,21 @@ endpoints are allowed, so the server can't be pointed at arbitrary URLs.
 
 ## Payments (Dodo Payments)
 
-`Upgrade to Pro` on `/billing` creates a Dodo hosted checkout (`lib/billing/dodo.ts`) for the
-$9.99/month product, tagged with the user's id. Dodo then calls `/api/webhooks/dodo`, which
-verifies the Standard Webhooks signature, de-duplicates by `webhook-id` (`public.billing_events`)
-and upserts `public.subscriptions` with the service role. `Manage subscription` opens Dodo's
-customer portal (update card, cancel). Access is granted while the status is `active` or
-`past_due`, and after cancellation until the paid period ends.
+Pro is a **one-time $9.99 purchase** (lifetime access). `Get Pro` on `/billing` creates a Dodo
+hosted checkout (`lib/billing/dodo.ts`) tagged with the user's id. Dodo then calls
+`/api/webhooks/dodo`, which verifies the Standard Webhooks signature, de-duplicates by
+`webhook-id` (`public.billing_events`) and, on `payment.succeeded`, stores status `lifetime` in
+`public.subscriptions` with the service role; a full `refund.succeeded` revokes it. When the
+buyer returns from checkout the server also confirms the payment with Dodo directly
+(`lib/billing/sync.ts`), so Pro activates even if the webhook is delayed. Subscription products
+(`subscription.*` events) are also supported if you switch to a recurring price later.
+`/api/billing/health` (signed in) reports whether each payment setting works.
+
+Webhook events to enable in Dodo: `payment.succeeded`, `refund.succeeded` (and `subscription.*`
+if you sell subscriptions).
 
 Setup: create the subscription product and a webhook endpoint
-(`https://<domain>/api/webhooks/dodo`) in Dodo, apply `supabase/migrations/004_dodo_payments.sql`,
+(`https://<domain>/api/webhooks/dodo`) in Dodo, apply `supabase/migrations/004_dodo_payments.sql` and `005_one_time_purchase.sql`,
 and set `DODO_PAYMENTS_API_KEY`, `DODO_PAYMENTS_WEBHOOK_SECRET`, `DODO_PAYMENTS_PRODUCT_ID`,
 `DODO_PAYMENTS_ENVIRONMENT` and `SUPABASE_SERVICE_ROLE_KEY` in Vercel.
 
