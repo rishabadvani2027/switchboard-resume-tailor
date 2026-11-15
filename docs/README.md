@@ -69,6 +69,19 @@ keywords they genuinely have; `POST /api/changes` adds them to the skills line a
 change (`lib/ats/add-skills.ts`), which is how a tailored resume reliably reaches 90+ without
 inventing experience.
 
+## Keeping the uploaded format
+
+Uploaded resumes are stored privately and linked to the analysis (`resume_document_id`).
+- **Word (.docx):** the export edits the user's own file in place (`lib/format/docx-edit.ts`):
+  only the differing words are replaced inside the existing runs, removed lines drop their
+  paragraph, and new lines are cloned from a neighbouring body paragraph, so fonts, styles,
+  bullets, spacing, headers and footers are unchanged.
+- **PDF:** at upload the layout is captured with pdf.js (`lib/format/pdf-layout.ts`): page size,
+  margins and, per line, font, size, weight, alignment, indent and spacing. The final resume is
+  rendered in that layout (`lib/format/styled.ts`) as a print-to-PDF page and as a .docx
+  (`lib/format/docx-generate.ts`). This is a close reproduction, not a byte-level edit.
+- **Pasted text:** a clean default layout.
+
 ## Bring your own key
 
 Users can open **AI settings** (`/settings`) and paste their own API key for any supported provider.

@@ -23,6 +23,7 @@ const present = (analysis: AnalysisRecord) => ({
   insights: analysis.insights,
   provider: analysis.provider,
   createdAt: analysis.createdAt,
+  resumeDocumentId: analysis.resumeDocumentId ?? null,
 });
 
 function deriveTitle(jobDescription: string) {
@@ -33,7 +34,7 @@ function deriveTitle(jobDescription: string) {
 export async function POST(request: Request) {
   const { session, response } = await requireSession(request);
   if (response) return response;
-  const body = await request.json().catch(() => null) as { resume?: unknown; jobDescription?: unknown; idempotencyKey?: unknown; title?: unknown; byok?: unknown } | null;
+  const body = await request.json().catch(() => null) as { resume?: unknown; jobDescription?: unknown; idempotencyKey?: unknown; title?: unknown; byok?: unknown; resumeDocumentId?: unknown } | null;
   const resume = typeof body?.resume === 'string' ? body.resume.replace(/\r\n/g, '\n') : '';
   const jobDescription = typeof body?.jobDescription === 'string' ? body.jobDescription.replace(/\r\n/g, '\n') : '';
   const idempotencyKey = typeof body?.idempotencyKey === 'string' ? body.idempotencyKey.trim() : '';
@@ -62,6 +63,11 @@ export async function POST(request: Request) {
       }
     }
 
+    // Link the uploaded file (if any) so the export can keep its formatting. Ownership is checked.
+    const resumeDocumentId = typeof body?.resumeDocumentId === 'string' && (await store.getDocument(body.resumeDocumentId))
+      ? body.resumeDocumentId
+      : null;
+
     const provider = byok ? createByokProvider(byok) : getTailoringProvider();
     const result = validateTailoringResult(await provider.analyze({ resume, jobDescription }), resume);
     const title = typeof body?.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 90) : deriveTitle(jobDescription);
@@ -75,6 +81,7 @@ export async function POST(request: Request) {
       insights: result.insights ?? { summary: '', matchedKeywords: [], missingKeywords: [] },
       provider: result.provider,
       usesOwnKey: Boolean(byok),
+      resumeDocumentId,
     });
     return NextResponse.json(present(saved));
   } catch (error) {

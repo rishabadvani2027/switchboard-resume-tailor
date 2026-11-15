@@ -4,6 +4,7 @@ import { assembleResume, canExport } from '../../../lib/export/assemble';
 import { errorResponse } from '../../../lib/server/http';
 import { getStore } from '../../../lib/server/store';
 import { jobKeywords, scoreResume } from '../../../lib/ats/score';
+import { buildFormattedExport } from '../../../lib/format/render';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
     const keywords = jobKeywords(analysis.jobDescription, analysis.insights);
     const atsBefore = scoreResume(analysis.source, analysis.jobDescription, keywords).score;
     const atsAfter = scoreResume(content, analysis.jobDescription, keywords).score;
+    const formatted = await buildFormattedExport(store, analysis, content);
     return NextResponse.json({
       content,
       title: analysis.title,
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
       total: analysis.changes.length,
       atsBefore,
       atsAfter,
+      ...formatted,
     });
   } catch (error) {
     return errorResponse(error, 'The export could not be created.');

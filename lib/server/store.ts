@@ -1,6 +1,7 @@
 import { authConfig, hasSupabase, isDemoMode, type Session } from '../auth/config';
 import type { ChangeStatus, Insights, ResumeChange } from '../tailoring/types';
 import { subscriptionGrantsAccess } from '../billing/dodo';
+import type { DocumentLayout } from '../format/styled';
 
 export type AnalysisRecord = {
   id: string;
@@ -12,6 +13,17 @@ export type AnalysisRecord = {
   provider: string;
   status: 'ready' | 'failed';
   createdAt: string;
+  resumeDocumentId?: string | null;
+};
+
+/** An uploaded resume file kept so the export can reproduce its formatting. */
+export type StoredDocument = {
+  id: string;
+  name: string;
+  mimeType: string;
+  storagePath: string | null;
+  layout: DocumentLayout | null;
+  text: string;
 };
 
 export type SubscriptionInfo = {
@@ -25,6 +37,7 @@ export type SubscriptionInfo = {
 export type AnalysisSummary = { id: string; title: string; createdAt: string; total: number; pending: number };
 
 export type NewAnalysis = Omit<AnalysisRecord, 'createdAt' | 'status'> & { idempotencyKey: string; usesOwnKey?: boolean };
+export type NewDocument = { name: string; type: string; bytes: ArrayBuffer; text: string; kind: 'resume' | 'job_description'; layout?: DocumentLayout | null };
 
 export interface Store {
   readonly kind: 'memory' | 'supabase';
@@ -40,7 +53,9 @@ export interface Store {
   /** Appends a new change (e.g. skills the user confirmed) to an analysis. */
   addChange(analysisId: string, change: ResumeChange): Promise<void>;
   saveExport(analysisId: string, content: string): Promise<void>;
-  saveDocument(input: { name: string; type: string; bytes: ArrayBuffer; text: string; kind: 'resume' | 'job_description' }): Promise<{ id: string | null }>;
+  saveDocument(input: NewDocument): Promise<{ id: string | null }>;
+  getDocument(id: string): Promise<StoredDocument | null>;
+  downloadDocument(document: StoredDocument): Promise<ArrayBuffer | null>;
   activateDemoSubscription?(): Promise<void>;
 }
 
@@ -64,6 +79,7 @@ type MemoryState = {
   analyses: Map<string, AnalysisRecord & { userId: string; idempotencyKey: string; usesOwnKey?: boolean }>;
   subscriptions: Set<string>;
   exports: Map<string, string>;
+  documents?: Map<string, StoredDocument & { userId: string; bytes: ArrayBuffer }>;
 };
 
 // Kept on globalThis so it survives Next.js hot reloads during local development.
@@ -111,14 +127,26 @@ export class MemoryStore implements Store {
     if (analysis) analysis.changes = [...analysis.changes, { ...change }];
   }
   async saveExport(analysisId: string, content: string) { memory.exports.set(`${this.userId}:${analysisId}`, content); }
-  async saveDocument() { return { id: null }; }
+  async saveDocument(input: NewDocument) {
+    memory.documents ??= new Map();
+    const id = crypto.randomUUID();
+    memory.documents.set(id, { id, userId: this.userId, name: input.name, mimeType: input.type, storagePath: null, layout: input.layout ?? null, text: input.text, bytes: input.bytes });
+    return { id };
+  }
+  async getDocument(id: string) {
+    const document = memory.documents?.get(id);
+    return document && document.userId === this.userId ? document : null;
+  }
+  async downloadDocument(document: StoredDocument) {
+    return memory.documents?.get(document.id)?.bytes ?? null;
+  }
 }
 
 /* ---------------------------------------------------------------- supabase (production) */
 
 type AnalysisRow = {
   id: string; title: string; source_text: string; job_description: string; insights: Insights | null;
-  provider: string; status: string; created_at: string;
+  provider: string; status: string; created_at: string; resume_document_id?: string | null;
 };
 type ChangeRow = {
   id: string; section: string; kind: ResumeChange['kind']; original: string; proposed: string;
@@ -202,11 +230,12 @@ export class SupabaseStore implements Store {
       provider: row.provider,
       status: row.status === 'failed' ? 'failed' : 'ready',
       createdAt: row.created_at,
+      resumeDocumentId: row.resume_document_id ?? null,
       changes: await this.loadChanges(row.id),
     };
   }
 
-  private static readonly analysisColumns = 'id,title,source_text,job_description,insights,provider,status,created_at';
+  private static readonly analysisColumns = 'id,title,source_text,job_description,insights,provider,status,created_at,resume_document_id';
 
   async findByIdempotencyKey(key: string) {
     const rows = await this.request<AnalysisRow[]>(`analyses?select=${SupabaseStore.analysisColumns}&user_id=eq.${this.userId}&idempotency_key=eq.${encodeURIComponent(key)}&limit=1`);
@@ -228,6 +257,7 @@ export class SupabaseStore implements Store {
         status: 'ready',
         idempotency_key: input.idempotencyKey,
         uses_own_key: Boolean(input.usesOwnKey),
+        resume_document_id: input.resumeDocumentId ?? null,
       }),
     });
     await this.request('changes', {
@@ -310,7 +340,7 @@ export class SupabaseStore implements Store {
     });
   }
 
-  async saveDocument(input: { name: string; type: string; bytes: ArrayBuffer; text: string; kind: 'resume' | 'job_description' }) {
+  async saveDocument(input: NewDocument) {
     const safeName = input.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120);
     const storagePath = `${this.userId}/${crypto.randomUUID()}-${safeName}`;
     const upload = await fetch(`${authConfig.supabaseUrl}/storage/v1/object/private-documents/${storagePath}`, {
@@ -330,9 +360,37 @@ export class SupabaseStore implements Store {
     const rows = await this.request<Array<{ id: string }>>('documents', {
       method: 'POST',
       prefer: 'return=representation',
-      body: JSON.stringify({ user_id: this.userId, kind: input.kind, storage_path: storagePath, extracted_text: input.text }),
+      body: JSON.stringify({
+        user_id: this.userId,
+        kind: input.kind,
+        storage_path: storagePath,
+        extracted_text: input.text,
+        file_name: input.name.slice(0, 255),
+        mime_type: input.type,
+        layout: input.layout ?? null,
+      }),
     });
     return { id: rows[0]?.id ?? null };
+  }
+
+  async getDocument(id: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+    const rows = await this.request<Array<{ id: string; file_name: string | null; mime_type: string | null; storage_path: string | null; layout: DocumentLayout | null; extracted_text: string }>>(
+      `documents?select=id,file_name,mime_type,storage_path,layout,extracted_text&id=eq.${id}&user_id=eq.${this.userId}&limit=1`,
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { id: row.id, name: row.file_name ?? 'resume', mimeType: row.mime_type ?? '', storagePath: row.storage_path, layout: row.layout, text: row.extracted_text };
+  }
+
+  async downloadDocument(document: StoredDocument) {
+    if (!document.storagePath || !document.storagePath.startsWith(`${this.userId}/`)) return null;
+    const response = await fetch(`${authConfig.supabaseUrl}/storage/v1/object/authenticated/private-documents/${document.storagePath.split('/').map(encodeURIComponent).join('/')}`, {
+      headers: { apikey: authConfig.supabaseAnonKey!, authorization: `Bearer ${this.token}` },
+      cache: 'no-store',
+    }).catch(() => null);
+    if (!response?.ok) return null;
+    return response.arrayBuffer();
   }
 }
 

@@ -39,11 +39,14 @@ async function uploadFile(file: File, kind: 'resume' | 'job_description') {
   const response = await fetch('/api/documents', { method: 'POST', body: form });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'That document could not be uploaded.');
-  return result.text as string;
+  return result as { id: string | null; name: string; text: string; format: 'docx' | 'pdf' | 'text'; formatKept?: boolean };
 }
+
+type UploadedResume = { id: string; name: string; format: 'docx' | 'pdf' | 'text' };
 
 export default function Intake() {
   const [resume, setResume] = useState('');
+  const [uploaded, setUploaded] = useState<UploadedResume | null>(null);
   const [jd, setJd] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<'' | 'resume' | 'jd' | 'analyze'>('');
@@ -55,6 +58,8 @@ export default function Intake() {
   useEffect(() => {
     setByok(loadByok());
     try {
+      const file = sessionStorage.getItem('draftResumeFile');
+      if (file) setUploaded(JSON.parse(file) as UploadedResume);
       setResume(sessionStorage.getItem('draftResume') ?? '');
       setJd(sessionStorage.getItem('draftJd') ?? '');
     } catch { /* storage unavailable */ }
@@ -78,8 +83,15 @@ export default function Intake() {
     setBusy(kind === 'resume' ? 'resume' : 'jd');
     setError('');
     try {
-      const text = await uploadFile(file, kind);
-      if (kind === 'resume') setResume(text); else setJd(text);
+      const result = await uploadFile(file, kind);
+      if (kind === 'resume') {
+        setResume(result.text);
+        const next = result.id ? { id: result.id, name: result.name, format: result.format } : null;
+        setUploaded(next);
+        try { if (next) sessionStorage.setItem('draftResumeFile', JSON.stringify(next)); else sessionStorage.removeItem('draftResumeFile'); } catch { /* ignore */ }
+      } else {
+        setJd(result.text);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'That document could not be uploaded.');
     } finally {
@@ -96,7 +108,7 @@ export default function Intake() {
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ resume, jobDescription: jd, idempotencyKey: requestKey.current, byok: byok ?? undefined }),
+        body: JSON.stringify({ resume, jobDescription: jd, idempotencyKey: requestKey.current, byok: byok ?? undefined, resumeDocumentId: uploaded?.id }),
       });
       const result = await response.json().catch(() => ({}));
       if (response.status === 402) { window.location.href = '/billing?reason=limit'; return; }
@@ -132,10 +144,11 @@ export default function Intake() {
       {error && <div className="notice error" role="alert">{error}</div>}
       <div className="grid-2" style={{ marginTop: 18 }}>
         <div className="card stack">
-          <div className="card-title-row"><h3>Your current resume</h3>{!resume && !jd && <button className="button ghost small" type="button" onClick={() => { setResume(SAMPLE_RESUME); setJd(SAMPLE_JD); }}>Try a sample</button>}</div>
+          <div className="card-title-row"><h3>Your current resume</h3>{!resume && !jd && <button className="button ghost small" type="button" onClick={() => { setResume(SAMPLE_RESUME); setJd(SAMPLE_JD); setUploaded(null); }}>Try a sample</button>}</div>
           <label className="upload">
             <strong>{busy === 'resume' ? 'Reading your resume…' : 'Upload resume'}</strong>
             <div className="field-note">PDF, DOCX or TXT · max 5 MB</div>
+            {uploaded && <div className="field-note format-kept">✓ {uploaded.name} — {uploaded.format === 'docx' ? 'your Word formatting will be kept in the final file' : uploaded.format === 'pdf' ? 'your PDF layout will be reproduced in the final file' : 'text file'}</div>}
             <input aria-label="Upload resume" type="file" disabled={busy !== ''} accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" onChange={(event) => onUpload(event, 'resume')} />
           </label>
           <label><span className="label">Resume text</span><textarea className="textarea tall" value={resume} placeholder="…or paste your resume here" onChange={(e) => setResume(e.target.value)} /></label>

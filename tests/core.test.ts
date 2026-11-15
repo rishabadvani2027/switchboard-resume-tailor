@@ -354,3 +354,64 @@ test('a new bullet suggested after an existing one stays on its own line', () =>
   const out = assembleResume(RESUME, [{ ...bullet, status: 'approved' }]);
   assert.ok(out.includes('- Organised the team lunch.\n- Mentored two junior engineers.'));
 });
+
+test('final lines inherit the uploaded layout: rewrites keep their style, new lines copy neighbours', async () => {
+  const { styleFinalDocument, stylesForSource } = await import('../lib/format/styled');
+  const source = 'Priya Sharma\nSUMMARY\nBackend engineer.\nSKILLS\nPython, Go';
+  const base = { italic: false, family: 'serif' as const, align: 'left' as const, indent: 0, gapBefore: 2 };
+  const layout = [
+    { ...base, text: 'Priya Sharma', size: 20, bold: true, align: 'center' as const },
+    { ...base, text: 'SUMMARY', size: 12, bold: true },
+    { ...base, text: 'Backend engineer.', size: 11, bold: false },
+    { ...base, text: 'SKILLS', size: 12, bold: true },
+    { ...base, text: 'Python, Go', size: 11, bold: false },
+  ];
+  const finalText = 'Priya Sharma\nSUMMARY\nBackend engineer building high-throughput APIs.\nSKILLS\nKubernetes\nPython, Go';
+  const styled = styleFinalDocument(source, finalText, stylesForSource(source.split('\n'), layout));
+  assert.deepEqual(styled.map((line) => [line.text, line.size, line.bold, line.align]), [
+    ['Priya Sharma', 20, true, 'center'],
+    ['SUMMARY', 12, true, 'left'],
+    ['Backend engineer building high-throughput APIs.', 11, false, 'left'],
+    ['SKILLS', 12, true, 'left'],
+    ['Kubernetes', 11, false, 'left'],
+    ['Python, Go', 11, false, 'left'],
+  ]);
+});
+
+test('approved changes are applied inside the original Word file, keeping run formatting', async () => {
+  const JSZip = (await import('jszip')).default;
+  const { applyChangesToDocx } = await import('../lib/format/docx-edit');
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const p = (inner: string, pPr = '') => `<w:p>${pPr}${inner}</w:p>`;
+  const r = (text: string, rPr = '') => `<w:r>${rPr}<w:t xml:space="preserve">${text}</w:t></w:r>`;
+  const bullet = '<w:pPr><w:pStyle w:val="ListBullet"/></w:pPr>';
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><w:document ${W}><w:body>`
+    + p(r('Acme Corp', '<w:rPr><w:b/></w:rPr>') + r(' — Software Engineer'))
+    + p(r('Built REST ') + r('APIs', '<w:rPr><w:i/></w:rPr>') + r(' used by internal teams.'), bullet)
+    + p(r('Organised the team lunch.'), bullet)
+    + p(r('SKILLS', '<w:rPr><w:b/></w:rPr>'), '<w:pPr><w:pStyle w:val="Heading2"/></w:pPr>')
+    + p(r('Python, Go'))
+    + '</w:body></w:document>';
+  const zip = new JSZip();
+  zip.file('word/document.xml', xml);
+  const original = await zip.generateAsync({ type: 'arraybuffer' });
+  const c = (id: string, kind: ResumeChange['kind'], original: string, proposed: string): ResumeChange => ({ id, section: 's', kind, original, proposed, rationale: '', status: 'approved' });
+  const result = await applyChangesToDocx(original, [
+    c('a', 'edit', 'Built REST APIs used by internal teams.', '- Built REST APIs used by 6 internal teams.'),
+    c('b', 'removal', 'Organised the team lunch.', ''),
+    c('c', 'addition', 'SKILLS', 'Kubernetes'),
+    c('d', 'edit', 'Python, Go', 'Python, Go, Docker'),
+    { ...c('e', 'edit', 'Acme Corp', 'Beta Corp'), status: 'rejected' },
+  ]);
+  assert.equal(result.applied, 4);
+  assert.deepEqual(result.skipped, []);
+  const out = await (await JSZip.loadAsync(result.file)).file('word/document.xml')!.async('string');
+  assert.ok(out.includes('<w:b/></w:rPr><w:t xml:space="preserve">Acme Corp</w:t>'), 'bold run untouched');
+  assert.ok(out.includes('<w:i/></w:rPr><w:t xml:space="preserve">APIs</w:t>'), 'italic word kept');
+  assert.ok(out.includes('used by 6 internal teams.'));
+  assert.ok(!out.includes('- Built'), 'no duplicate bullet dash in a Word list');
+  assert.ok(!out.includes('Organised'), 'removed paragraph is gone');
+  assert.ok(/SKILLS.*Kubernetes.*Python, Go, Docker/s.test(out.replace(/<[^>]+>/g, '')), 'new line inserted after the heading');
+  const kubernetesParagraph = out.slice(out.lastIndexOf('<w:p>', out.indexOf('Kubernetes')), out.indexOf('Kubernetes'));
+  assert.ok(!kubernetesParagraph.includes('Heading2'), 'new line uses body formatting, not the heading style');
+});

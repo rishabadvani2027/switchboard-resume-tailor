@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { requireSession } from '../../../lib/auth/require-session';
 import { DocumentError, extractDocumentText } from '../../../lib/documents/validation';
 import { getStore } from '../../../lib/server/store';
+import { extractPdfLayout } from '../../../lib/format/pdf-layout';
+import type { DocumentLayout } from '../../../lib/format/styled';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,8 +25,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 422 });
   }
 
-  // Keeping a private copy is best-effort: the user should never be blocked from tailoring
-  // because storage had a hiccup.
+  // For PDFs, capture the visual layout (fonts, sizes, alignment, spacing) so the tailored
+  // resume can be rendered in the same design. Best-effort: never blocks the upload.
+  let layout: DocumentLayout | null = null;
+  if (kind === 'resume' && extracted.metadata.type === 'application/pdf') {
+    try { layout = await extractPdfLayout(extracted.bytes.slice(0)); } catch (error) { console.error('[documents] layout capture failed', error); }
+  }
+
+  // Keep a private copy of the original file so the export can reuse its formatting.
+  // Best-effort: the user should never be blocked from tailoring because storage had a hiccup.
   let id: string | null = null;
   try {
     id = (await getStore(session!).saveDocument({
@@ -33,9 +42,11 @@ export async function POST(request: Request) {
       bytes: extracted.bytes,
       text: extracted.text,
       kind,
+      layout,
     })).id;
   } catch (error) {
     console.error('[documents] could not store a private copy', error);
   }
-  return NextResponse.json({ id, name: extracted.metadata.name, text: extracted.text });
+  const format = extracted.metadata.type === 'application/pdf' ? 'pdf' : extracted.metadata.type === 'text/plain' ? 'text' : 'docx';
+  return NextResponse.json({ id, name: extracted.metadata.name, text: extracted.text, format, formatKept: Boolean(id) && format !== 'text' });
 }
