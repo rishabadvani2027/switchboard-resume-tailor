@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { authConfig, hasSupabase, isDemoMode } from '../../../../lib/auth/config';
+import { authConfig, getEnabledProviders, hasSupabase, isDemoMode } from '../../../../lib/auth/config';
 import { createOAuthState, createPkceChallenge, createPkceVerifier, OAUTH_STATE_COOKIE, OAUTH_VERIFIER_COOKIE } from '../../../../lib/auth/oauth';
 import { safeRedirectPath } from '../../../../lib/security/redirect';
 
@@ -10,6 +10,10 @@ export async function GET(request: Request) {
   const next = safeRedirectPath(url.searchParams.get('next'));
   if (isDemoMode) return NextResponse.redirect(new URL(next, url.origin));
   if (!hasSupabase) return NextResponse.redirect(new URL('/signin?error=auth-unavailable', url.origin));
+  // Supabase shows a raw JSON error page if Google isn't enabled there, so check first.
+  if (!(await getEnabledProviders()).google) {
+    return NextResponse.redirect(new URL(`/signin?error=google-unavailable&next=${encodeURIComponent(next)}`, url.origin));
+  }
 
   const state = createOAuthState();
   const verifier = createPkceVerifier();

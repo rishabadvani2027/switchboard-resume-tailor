@@ -1,4 +1,4 @@
-import { isDemoMode } from '../../lib/auth/config';
+import { getEnabledProviders, isDemoMode } from '../../lib/auth/config';
 import { safeRedirectPath } from '../../lib/security/redirect';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +10,7 @@ const errorMessages: Record<string, string> = {
   'rate-limited': 'Too many attempts. Wait a minute and try again.',
   'auth-response-invalid': 'The authentication response was invalid. Please try again.',
   'oauth-denied': 'Google sign-in was cancelled.',
+  'google-unavailable': 'Google sign-in isn’t available yet. Please sign in with your email and password.',
   'oauth-code-missing': 'Google sign-in did not return an authorization code.',
   'oauth-state-missing': 'Google sign-in could not be verified. Please start again.',
   'oauth-state-mismatch': 'Google sign-in could not be verified. Please start again.',
@@ -20,8 +21,9 @@ const errorMessages: Record<string, string> = {
   'session-expired': 'Your session expired. Please sign in again.',
 };
 
-export default function SignIn({ searchParams }: { searchParams: { error?: string; message?: string; next?: string } }) {
+export default async function SignIn({ searchParams }: { searchParams: { error?: string; message?: string; next?: string } }) {
   const next = safeRedirectPath(searchParams.next);
+  const { google } = await getEnabledProviders();
   const message = searchParams.message === 'verification-sent'
     ? 'Check your email for a verification link, then return here to sign in.'
     : searchParams.message === 'email-verified'
@@ -41,8 +43,12 @@ export default function SignIn({ searchParams }: { searchParams: { error?: strin
           <label><span className="label">Password</span><input className="input" name="password" type="password" autoComplete="current-password" defaultValue={isDemoMode ? 'password' : ''} required /></label>
           <button className="button primary" type="submit">Sign in</button>
         </form>
-        <div className="divider">or</div>
-        <a className="button secondary" href={isDemoMode ? next : `/api/auth/google?next=${encodeURIComponent(next)}`}>Continue with Google <span>↗</span></a>
+        {google && (
+          <>
+          <div className="divider">or</div>
+          <a className="button secondary" href={isDemoMode ? next : `/api/auth/google?next=${encodeURIComponent(next)}`}>Continue with Google <span>↗</span></a>
+          </>
+        )}
         <p className="auth-switch">New here? <a href={`/signup?next=${encodeURIComponent(next)}`}>Create an account</a></p>
       </div>
     </main>

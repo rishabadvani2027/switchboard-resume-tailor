@@ -1,4 +1,4 @@
-import { isDemoMode } from '../../lib/auth/config';
+import { getEnabledProviders, isDemoMode } from '../../lib/auth/config';
 import { safeRedirectPath } from '../../lib/security/redirect';
 
 export const dynamic = 'force-dynamic';
@@ -13,8 +13,9 @@ const errors: Record<string, string> = {
   'signup-failed': 'We could not create your account. Please try again.',
 };
 
-export default function SignUp({ searchParams }: { searchParams: { error?: string; message?: string; next?: string } }) {
+export default async function SignUp({ searchParams }: { searchParams: { error?: string; message?: string; next?: string } }) {
   const next = safeRedirectPath(searchParams.next);
+  const { google } = await getEnabledProviders();
   const sent = searchParams.message === 'verification-sent';
   return (
     <main className="auth-wrap">
@@ -33,8 +34,12 @@ export default function SignUp({ searchParams }: { searchParams: { error?: strin
             <button className="button primary" type="submit">Create account</button>
           </form>
         )}
-        <div className="divider">or</div>
-        <a className="button secondary" href={isDemoMode ? next : `/api/auth/google?next=${encodeURIComponent(next)}`}>Sign up with Google <span>↗</span></a>
+        {google && (
+          <>
+          <div className="divider">or</div>
+          <a className="button secondary" href={isDemoMode ? next : `/api/auth/google?next=${encodeURIComponent(next)}`}>Sign up with Google <span>↗</span></a>
+          </>
+        )}
         <p className="auth-switch">Already have an account? <a href={`/signin?next=${encodeURIComponent(next)}`}>Sign in</a></p>
       </div>
     </main>

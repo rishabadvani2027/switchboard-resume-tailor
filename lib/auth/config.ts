@@ -76,3 +76,24 @@ export const sessionCookieOptions = (secure: boolean, maxAge: number) => ({
 });
 export const ACCESS_MAX_AGE = 60 * 60 * 24 * 7;
 export const REFRESH_MAX_AGE = 60 * 60 * 24 * 30;
+
+/**
+ * Which external sign-in providers are switched on in Supabase (Authentication → Providers).
+ * Read from Supabase's public settings endpoint and cached for a few minutes, so the app can
+ * hide a "Continue with Google" button instead of sending people to a Supabase error page.
+ */
+export async function getEnabledProviders(): Promise<{ google: boolean }> {
+  if (isDemoMode) return { google: true };
+  if (!hasSupabase) return { google: false };
+  try {
+    const response = await fetch(`${authConfig.supabaseUrl}/auth/v1/settings`, {
+      headers: { apikey: authConfig.supabaseAnonKey! },
+      next: { revalidate: 300 },
+    } as RequestInit);
+    if (!response.ok) return { google: false };
+    const settings = await response.json() as { external?: Record<string, boolean> };
+    return { google: Boolean(settings.external?.google) };
+  } catch {
+    return { google: false };
+  }
+}
