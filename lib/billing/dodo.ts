@@ -10,11 +10,14 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  *   DODO_PAYMENTS_PRODUCT_ID      the $9.99/month subscription product (pdt_…)
  *   DODO_PAYMENTS_ENVIRONMENT     "test_mode" (default) or "live_mode"
  */
+// Values pasted into a dashboard often carry stray spaces, line breaks or quotes; strip them.
+const clean = (value: string | undefined) => value?.trim().replace(/^["']|["']$/g, '').trim() || undefined;
+
 export const dodoConfig = {
-  apiKey: process.env.DODO_PAYMENTS_API_KEY,
-  webhookSecret: process.env.DODO_PAYMENTS_WEBHOOK_SECRET,
-  productId: process.env.DODO_PAYMENTS_PRODUCT_ID,
-  environment: process.env.DODO_PAYMENTS_ENVIRONMENT === 'live_mode' ? 'live_mode' : 'test_mode',
+  apiKey: clean(process.env.DODO_PAYMENTS_API_KEY),
+  webhookSecret: clean(process.env.DODO_PAYMENTS_WEBHOOK_SECRET),
+  productId: clean(process.env.DODO_PAYMENTS_PRODUCT_ID),
+  environment: /^live/i.test(clean(process.env.DODO_PAYMENTS_ENVIRONMENT) ?? '') ? 'live_mode' : 'test_mode',
 };
 
 export const isDodoConfigured = () => Boolean(dodoConfig.apiKey && dodoConfig.productId);
@@ -39,8 +42,10 @@ async function dodoRequest<T>(path: string, body: unknown): Promise<T> {
   if (!response.ok) {
     const detail = (await response.text().catch(() => '')).slice(0, 500);
     throw new DodoError(`Dodo ${path.split('?')[0]} failed: ${response.status} ${detail}`, response.status === 401
-      ? 'Payments are misconfigured (the Dodo API key was rejected).'
-      : undefined);
+      ? `Payments are misconfigured: Dodo rejected the API key in ${dodoConfig.environment === 'live_mode' ? 'live' : 'test'} mode.`
+      : response.status === 404 || response.status === 422
+        ? 'Payments are misconfigured: Dodo could not find the product. Check DODO_PAYMENTS_PRODUCT_ID.'
+        : undefined);
   }
   return response.json() as Promise<T>;
 }
