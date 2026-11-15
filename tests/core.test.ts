@@ -415,3 +415,19 @@ test('approved changes are applied inside the original Word file, keeping run fo
   const kubernetesParagraph = out.slice(out.lastIndexOf('<w:p>', out.indexOf('Kubernetes')), out.indexOf('Kubernetes'));
   assert.ok(!kubernetesParagraph.includes('Heading2'), 'new line uses body formatting, not the heading style');
 });
+
+test('typed bullet characters in a Word list are kept when the line is rewritten', async () => {
+  const JSZip = (await import('jszip')).default;
+  const { applyChangesToDocx } = await import('../lib/format/docx-edit');
+  const xml = '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+    + '<w:p><w:pPr><w:pStyle w:val="ListBullet"/></w:pPr><w:r><w:t xml:space="preserve">• Built REST APIs.</w:t></w:r></w:p>'
+    + '</w:body></w:document>';
+  const zip = new JSZip();
+  zip.file('word/document.xml', xml);
+  const result = await applyChangesToDocx(await zip.generateAsync({ type: 'arraybuffer' }), [
+    { id: 'a', section: 's', kind: 'edit', original: '• Built REST APIs.', proposed: '• Designed REST APIs.', rationale: '', status: 'approved' },
+    { id: 'b', section: 's', kind: 'addition', original: '• Designed REST APIs.', proposed: '• Mentored engineers.', rationale: '', status: 'pending' },
+  ]);
+  const out = await (await JSZip.loadAsync(result.file)).file('word/document.xml')!.async('string');
+  assert.ok(out.includes('• Designed REST APIs.'));
+});

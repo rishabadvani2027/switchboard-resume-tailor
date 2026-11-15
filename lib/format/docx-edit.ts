@@ -130,7 +130,13 @@ function isListParagraph(paragraph: XNode) {
   const style = toArray(paragraph.getElementsByTagName('w:pStyle'))[0] as unknown as { getAttribute?(name: string): string | null } | undefined;
   return /list|bullet/i.test(style?.getAttribute?.('w:val') ?? '');
 }
-const stripBullet = (text: string) => text.replace(/^\s*([-•*▪◦●]|\d+[.)])\s+/, '');
+const BULLET_PREFIX = /^\s*([-•*▪◦●]|\d+[.)])\s+/;
+const stripBullet = (text: string) => text.replace(BULLET_PREFIX, '');
+/**
+ * Word draws bullets for real list paragraphs, so a typed "- " from the AI must be dropped there.
+ * But some resumes type the bullet character themselves ("• Built…"); then the text keeps it.
+ */
+const bulletAware = (paragraph: XNode, text: string) => (isListParagraph(paragraph) && !BULLET_PREFIX.test(paragraphText(paragraph)) ? stripBullet(text) : text);
 
 function isHeadingParagraph(paragraph: XNode) {
   const style = toArray(paragraph.getElementsByTagName('w:pStyle'))[0] as unknown as { getAttribute?(name: string): string | null } | undefined;
@@ -165,7 +171,7 @@ function cloneWithText(doc: XDocument, template: XNode, text: string) {
     if (child.nodeType === ELEMENT && child.nodeName !== 'w:rPr') run.removeChild(child);
   }
   const t = doc.createElementNS(W_NS, 'w:t');
-  setText(t, isListParagraph(clone) ? stripBullet(text) : text);
+  setText(t, bulletAware(template, text));
   run.appendChild(t);
   return clone;
 }
@@ -234,7 +240,7 @@ export async function applyChangesToDocx(original: ArrayBuffer, changes: ResumeC
       if (change.kind === 'removal' && found.whole) {
         paragraph.parentNode!.removeChild(paragraph);
       } else {
-        const replacement = isListParagraph(paragraph) && found.whole ? stripBullet(proposedLines[0] ?? '') : (proposedLines[0] ?? '');
+        const replacement = found.whole ? bulletAware(paragraph, proposedLines[0] ?? '') : (proposedLines[0] ?? '');
         if (!replaceRange(found, replacement)) { skipped.push(change.id); continue; }
       }
       applied += 1;
@@ -245,7 +251,7 @@ export async function applyChangesToDocx(original: ArrayBuffer, changes: ResumeC
     covered.forEach((item, index) => {
       if (index < proposedLines.length) {
         const whole = locateInParagraph(item.paragraph, paragraphText(item.paragraph));
-        if (whole) replaceRange(whole, isListParagraph(item.paragraph) ? stripBullet(proposedLines[index]) : proposedLines[index]);
+        if (whole) replaceRange(whole, bulletAware(item.paragraph, proposedLines[index]));
       } else {
         item.paragraph.parentNode!.removeChild(item.paragraph);
       }
