@@ -66,8 +66,20 @@ request only, and never stored or logged on the server (provider error text is r
 made with a user's own key do not count towards the free allowance. Only the built-in provider
 endpoints are allowed, so the server can't be pointed at arbitrary URLs.
 
+## Payments (Dodo Payments)
+
+`Upgrade to Pro` on `/billing` creates a Dodo hosted checkout (`lib/billing/dodo.ts`) for the
+$9.99/month product, tagged with the user's id. Dodo then calls `/api/webhooks/dodo`, which
+verifies the Standard Webhooks signature, de-duplicates by `webhook-id` (`public.billing_events`)
+and upserts `public.subscriptions` with the service role. `Manage subscription` opens Dodo's
+customer portal (update card, cancel). Access is granted while the status is `active` or
+`past_due`, and after cancellation until the paid period ends.
+
+Setup: create the subscription product and a webhook endpoint
+(`https://<domain>/api/webhooks/dodo`) in Dodo, apply `supabase/migrations/004_dodo_payments.sql`,
+and set `DODO_PAYMENTS_API_KEY`, `DODO_PAYMENTS_WEBHOOK_SECRET`, `DODO_PAYMENTS_PRODUCT_ID`,
+`DODO_PAYMENTS_ENVIRONMENT` and `SUPABASE_SERVICE_ROLE_KEY` in Vercel.
+
 ## Not built yet
 
-- Card payments: the $9.99 plan shows "coming soon"; the free limit (3 analyses) is enforced
-  server-side. Add Stripe Checkout + a webhook that writes `public.subscriptions`.
 - Native .docx/.pdf generation: exports are Word-compatible `.doc`, print-to-PDF, and `.txt`.

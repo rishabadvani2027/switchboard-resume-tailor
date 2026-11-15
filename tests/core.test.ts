@@ -242,3 +242,36 @@ test('analyses run with the user\'s own key do not use up the free allowance', a
   await store.createAnalysis({ ...base, id: `b-${Date.now()}`, idempotencyKey: 'k2', usesOwnKey: true });
   assert.equal(await store.countCompletedAnalyses(), 1);
 });
+
+test('Dodo webhooks are verified with the Standard Webhooks signature scheme', async () => {
+  const { createHmac } = await import('node:crypto');
+  const { verifyWebhook } = await import('../lib/billing/dodo');
+  const rawKey = Buffer.from('super-secret-signing-key-123456');
+  const secret = `whsec_${rawKey.toString('base64')}`;
+  const body = JSON.stringify({ type: 'subscription.active', data: { subscription_id: 'sub_1' } });
+  const now = Date.now();
+  const timestamp = String(Math.floor(now / 1000));
+  const sign = (content: string) => createHmac('sha256', rawKey).update(content).digest('base64');
+  const headers = (signature: string, ts = timestamp) => new Headers({ 'webhook-id': 'msg_1', 'webhook-timestamp': ts, 'webhook-signature': signature });
+  assert.equal(verifyWebhook(body, headers(`v1,${sign(`msg_1.${timestamp}.${body}`)}`), secret, now), true);
+  assert.equal(verifyWebhook(body, headers(`v1,bogus v1,${sign(`msg_1.${timestamp}.${body}`)}`), secret, now), true);
+  assert.equal(verifyWebhook(`${body} `, headers(`v1,${sign(`msg_1.${timestamp}.${body}`)}`), secret, now), false);
+  assert.equal(verifyWebhook(body, headers(`v1,${sign(`msg_1.${timestamp}.${body}`)}`), `whsec_${Buffer.from('wrong').toString('base64')}`, now), false);
+  const old = String(Math.floor(now / 1000) - 600);
+  assert.equal(verifyWebhook(body, headers(`v1,${sign(`msg_1.${old}.${body}`)}`, old), secret, now), false);
+});
+
+test('subscription status mapping and access rules', async () => {
+  const { statusFromEvent, subscriptionGrantsAccess } = await import('../lib/billing/dodo');
+  const event = (type: string) => ({ type, data: {} });
+  assert.equal(statusFromEvent(event('subscription.active')), 'active');
+  assert.equal(statusFromEvent(event('subscription.renewed')), 'active');
+  assert.equal(statusFromEvent(event('subscription.on_hold')), 'on_hold');
+  assert.equal(statusFromEvent(event('payment.succeeded')), null);
+  const now = Date.parse('2026-11-15T00:00:00Z');
+  assert.equal(subscriptionGrantsAccess({ status: 'active' }, now), true);
+  assert.equal(subscriptionGrantsAccess({ status: 'past_due' }, now), true);
+  assert.equal(subscriptionGrantsAccess({ status: 'on_hold' }, now), false);
+  assert.equal(subscriptionGrantsAccess({ status: 'cancelled', current_period_end: '2026-12-01T00:00:00Z' }, now), true);
+  assert.equal(subscriptionGrantsAccess({ status: 'cancelled', current_period_end: '2026-11-01T00:00:00Z' }, now), false);
+});

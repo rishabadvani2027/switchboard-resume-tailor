@@ -1,5 +1,6 @@
 import { authConfig, hasSupabase, isDemoMode, type Session } from '../auth/config';
 import type { ChangeStatus, Insights, ResumeChange } from '../tailoring/types';
+import { subscriptionGrantsAccess } from '../billing/dodo';
 
 export type AnalysisRecord = {
   id: string;
@@ -13,6 +14,14 @@ export type AnalysisRecord = {
   createdAt: string;
 };
 
+export type SubscriptionInfo = {
+  status: string;
+  active: boolean;
+  customerId: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+};
+
 export type AnalysisSummary = { id: string; title: string; createdAt: string; total: number; pending: number };
 
 export type NewAnalysis = Omit<AnalysisRecord, 'createdAt' | 'status'> & { idempotencyKey: string; usesOwnKey?: boolean };
@@ -21,6 +30,7 @@ export interface Store {
   readonly kind: 'memory' | 'supabase';
   countCompletedAnalyses(): Promise<number>;
   hasActiveSubscription(): Promise<boolean>;
+  getSubscription(): Promise<SubscriptionInfo | null>;
   findByIdempotencyKey(key: string): Promise<AnalysisRecord | null>;
   createAnalysis(input: NewAnalysis): Promise<AnalysisRecord>;
   getAnalysis(id: string): Promise<AnalysisRecord | null>;
@@ -69,6 +79,11 @@ export class MemoryStore implements Store {
   async countCompletedAnalyses() { return this.own().filter((analysis) => analysis.status === 'ready' && !analysis.usesOwnKey).length; }
   async hasActiveSubscription() { return memory.subscriptions.has(this.userId); }
   async activateDemoSubscription() { memory.subscriptions.add(this.userId); }
+  async getSubscription(): Promise<SubscriptionInfo | null> {
+    return memory.subscriptions.has(this.userId)
+      ? { status: 'active', active: true, customerId: null, currentPeriodEnd: null, cancelAtPeriodEnd: false }
+      : null;
+  }
   async findByIdempotencyKey(key: string) { return this.own().find((analysis) => analysis.idempotencyKey === key) ?? null; }
   async createAnalysis(input: NewAnalysis) {
     const record = { ...input, userId: this.userId, status: 'ready' as const, createdAt: new Date().toISOString(), changes: input.changes.map((c) => ({ ...c })) };
@@ -147,9 +162,23 @@ export class SupabaseStore implements Store {
     return rows.length;
   }
 
+  async getSubscription(): Promise<SubscriptionInfo | null> {
+    const rows = await this.request<Array<{ status: string; provider_customer_id: string | null; current_period_end: string | null; cancel_at_period_end: boolean | null }>>(
+      `subscriptions?select=status,provider_customer_id,current_period_end,cancel_at_period_end&user_id=eq.${this.userId}&limit=1`,
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      status: row.status,
+      active: subscriptionGrantsAccess(row),
+      customerId: row.provider_customer_id,
+      currentPeriodEnd: row.current_period_end,
+      cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+    };
+  }
+
   async hasActiveSubscription() {
-    const rows = await this.request<Array<{ status: string }>>(`subscriptions?select=status&user_id=eq.${this.userId}`);
-    return rows.some((row) => row.status === 'active' || row.status === 'trialing');
+    return Boolean((await this.getSubscription())?.active);
   }
 
   private async loadChanges(analysisId: string) {
